@@ -2,37 +2,28 @@ const express = require('express');
 const fetch = require('node-fetch');
 
 const app = express();
-
 app.use(express.json());
 
-// Booking.com Nearby Cities Route
+// Free Alternative API Route
 app.get('/api/booking/cities', async (req, res) => {
-    const lat = req.query.lat || '65.9667';
-    const lng = req.query.lng || '-18.5333';
-    
     try {
-        const response = await fetch(`https://booking-com15.p.rapidapi.com/api/v1/hotels/getNearbyCities?latitude=${lat}&longitude=${lng}&languagecode=en-us`, {
+        const response = await fetch('https://booking-com.p.rapidapi.com/v1/hotels/locations?name=Paris&locale=en-gb', {
             method: 'GET',
             headers: {
-                'Content-Type': 'application/json',
-                'x-rapidapi-host': 'booking-com15.p.rapidapi.com',
+                'x-rapidapi-host': 'booking-com.p.rapidapi.com',
                 'x-rapidapi-key': '54b0132b50msh88120a0c3aec79ep1cfcefjsn69cc3e68ee1f'
             }
         });
         const data = await response.json();
         res.json(data);
     } catch (error) {
-        res.status(500).json({ error: 'Booking API Fetch Error' });
+        res.status(500).json({ error: 'Failed to fetch data' });
     }
 });
 
-// Root Route
 app.get('/', (req, res) => {
-    res.send('Server is running perfectly!');
+    res.send('Server Active');
 });
 
-// Port Handling for Render
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

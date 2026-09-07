@@ -1,3 +1,4 @@
+const fetch = require('node-fetch');
 // Booking.com Nearby Cities Route
 app.get('/api/booking/cities', async (req, res) => {
     const lat = req.query.lat || '65.9667';
@@ -18,3 +19,5 @@ app.get('/api/booking/cities', async (req, res) => {
         res.status(500).json({ error: 'Booking API Fetch Error' });
     }
 });
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

@@ -1,4 +1,10 @@
+const express = require('express');
 const fetch = require('node-fetch');
+
+const app = express();
+
+app.use(express.json());
+
 // Booking.com Nearby Cities Route
 app.get('/api/booking/cities', async (req, res) => {
     const lat = req.query.lat || '65.9667';
@@ -19,5 +25,14 @@ app.get('/api/booking/cities', async (req, res) => {
         res.status(500).json({ error: 'Booking API Fetch Error' });
     }
 });
+
+// Root Route
+app.get('/', (req, res) => {
+    res.send('Server is running perfectly!');
+});
+
+// Port Handling for Render
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+    console.log(`Server running on port ${PORT}`);
+});

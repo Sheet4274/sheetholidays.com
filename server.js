@@ -103,6 +103,38 @@ app.get('/api/flights', async (req, res) => {
 });
 
 /* =========================
+TAXI SEARCH
+========================= */
+app.get('/api/taxis', async (req, res) => {
+  try {
+    const { pickUpLocation, dropOffLocation, pickUpDate, pickUpTime } = req.query;
+    if (!pickUpLocation || !dropOffLocation || !pickUpDate || !pickUpTime) {
+      return res.status(400).json({ 
+        status: false, 
+        error: 'pickUpLocation, dropOffLocation, pickUpDate and pickUpTime are required' 
+      });
+    }
+    const response = await axios.get(
+      `https://${HOST}/api/v1/taxi/searchTaxis`,
+      {
+        params: {
+          pickUpLocation,
+          dropOffLocation,
+          pickUpDate,
+          pickUpTime,
+          currency_code: 'INR'
+        },
+        headers
+      }
+    );
+    res.json(response.data);
+  } catch (error) {
+    console.error('Taxi Search Error:', error.response?.data || error.message);
+    res.status(500).json({ status: false, error: error.message, details: error.response?.data || null });
+  }
+});
+
+/* =========================
 SERVER
 ========================= */
 const PORT = process.env.PORT || 3000;

@@ -13,10 +13,82 @@ const headers = {
   'x-rapidapi-key': process.env.RAPIDAPI_KEY
 };
 
-// 1. HOTEL DESTINATION SEARCH
+// MULTI-LOCATION TRENDING HOTELS API (Srinagar, Gulmarg, Katra, Goa, Amritsar, Dalhousie)
+app.get('/api/trendingHotels', async (req, res) => {
+  try {
+    const locations = [
+      { city: 'Srinagar', id: '-2111580' },
+      { city: 'Gulmarg', id: '-2097341' },
+      { city: 'Katra', id: '-2099307' },
+      { city: 'Goa', id: '-2092174' },
+      { city: 'Amritsar', id: '-2089476' },
+      { city: 'Dalhousie', id: '-2094235' }
+    ];
+
+    let allHotels = [];
+
+    for (let loc of locations) {
+      try {
+        const response = await axios.get(`https://${HOST}/api/v1/hotels/searchHotels`, {
+          params: {
+            dest_id: loc.id,
+            search_type: 'CITY',
+            arrival_date: '2026-10-01',
+            departure_date: '2026-10-05',
+            adults: '2',
+            room_qty: '1',
+            currency_code: 'INR'
+          },
+          headers
+        });
+        
+        const hotels = response.data.data?.hotels || response.data.result || [];
+        // Har location se 4-5 hotels utha kar list me daal rahe hain
+        hotels.slice(0, 4).forEach(h => {
+          allHotels.push({
+            location: loc.city,
+            name: h.property?.name || h.hotel_name || 'Luxury Stay',
+            photo: h.property?.photoUrls?.[0] || h.main_photo_url || 'https://images.unsplash.com/photo-1566073771259-6a8506099945',
+            price: h.property?.priceBreakdown?.grossPrice?.value ? `₹${h.property.priceBreakdown.grossPrice.value}` : '₹4,500',
+            rating: h.property?.reviewScore ? `${h.property.reviewScore} ⭐` : '4.5 ⭐'
+          });
+        });
+      } catch (err) {
+        console.log(`Skipped ${loc.city}`);
+      }
+    }
+
+    res.json({ status: true, data: allHotels });
+  } catch (error) {
+    res.status(500).json({ status: false, error: error.message });
+  }
+});
+
+// CUSTOM SEARCH HOTELS API
+app.get('/api/searchHotels', async (req, res) => {
+  try {
+    const { dest_id, arrival_date, departure_date, adults, rooms } = req.query;
+    const response = await axios.get(`https://${HOST}/api/v1/hotels/searchHotels`, {
+      params: {
+        dest_id: dest_id || '-2092174',
+        search_type: 'CITY',
+        arrival_date: arrival_date || '2026-10-01',
+        departure_date: departure_date || '2026-10-05',
+        adults: adults || '2',
+        room_qty: rooms || '1',
+        currency_code: 'INR'
+      },
+      headers
+    });
+    res.json(response.data);
+  } catch (error) {
+    res.status(500).json({ status: false, error: error.message });
+  }
+});
+
 app.get('/api/destinations', async (req, res) => {
   try {
-    const query = req.query.query || 'Delhi';
+    const query = req.query.query || 'Srinagar';
     const response = await axios.get(`https://${HOST}/api/v1/hotels/searchDestination`, {
       params: { query, locale: 'en-us' },
       headers
@@ -24,89 +96,6 @@ app.get('/api/destinations', async (req, res) => {
     res.json(response.data);
   } catch (error) {
     res.status(500).json({ status: false, error: error.message });
-  }
-});
-
-// 2. SEARCH HOTELS BY DESTINATION ID (With Prices & Booking Links)
-app.get('/api/searchHotels', async (req, res) => {
-  try {
-    const { dest_id, search_type, arrival_date, departure_date } = req.query;
-    
-    // Default dates if not provided
-    const checkin = arrival_date || '2026-10-01';
-    const checkout = departure_date || '2026-10-05';
-
-    const response = await axios.get(`https://${HOST}/api/v1/hotels/searchHotels`, {
-      params: {
-        dest_id: dest_id || '-2092174', // Default Goa
-        search_type: search_type || 'CITY',
-        arrival_date: checkin,
-        departure_date: checkout,
-        adults: '1',
-        room_qty: '1',
-        page_number: '1',
-        units: 'metric',
-        temperature_unit: 'c',
-        languagecode: 'en-us',
-        currency_code: 'INR'
-      },
-      headers
-    });
-    res.json(response.data);
-  } catch (error) {
-    res.status(500).json({ status: false, error: error.response?.data?.message || error.message });
-  }
-});
-
-// 3. FLIGHT SEARCH
-app.get('/api/flights', async (req, res) => {
-  try {
-    let { fromId, toId, departDate } = req.query;
-    if (!fromId || !toId) return res.status(400).json({ status: false, error: 'From and To required' });
-
-    fromId = fromId.toUpperCase().includes('.AIRPORT') ? fromId.toUpperCase() : `${fromId.toUpperCase()}.AIRPORT`;
-    toId = toId.toUpperCase().includes('.AIRPORT') ? toId.toUpperCase() : `${toId.toUpperCase()}.AIRPORT`;
-
-    const response = await axios.get(`https://${HOST}/api/v1/flights/searchFlights`, {
-      params: {
-        fromId,
-        toId,
-        departDate: departDate || '2026-10-01',
-        currency_code: 'INR',
-        adults: '1'
-      },
-      headers
-    });
-    res.json(response.data);
-  } catch (error) {
-    res.status(500).json({ status: false, error: error.message });
-  }
-});
-
-// 4. TAXI / CAR RENTAL SEARCH
-app.get('/api/taxis', async (req, res) => {
-  try {
-    const { pickUpLocation, dropOffLocation, pickUpDate, pickUpTime } = req.query;
-    const response = await axios.get(`https://${HOST}/api/v1/taxi/searchTaxis`, {
-      params: {
-        pickUpLocation: pickUpLocation || 'DEL',
-        dropOffLocation: dropOffLocation || 'AGR',
-        pickUpDate: pickUpDate || '2026-10-01',
-        pickUpTime: pickUpTime || '10:00',
-        currency_code: 'INR'
-      },
-      headers
-    });
-    res.json(response.data);
-  } catch (error) {
-    // Fallback dummy live option if taxi endpoint is restricted
-    res.json({
-      status: true,
-      data: [
-        { name: "Sedan (4 Seater AC)", price: "₹2,450", pickup: pickUpLocation, drop: dropOffLocation, link: "https://www.google.com/search?q=taxi+booking" },
-        { name: "SUV / Innova (6 Seater)", price: "₹3,800", pickup: pickUpLocation, drop: dropOffLocation, link: "https://www.google.com/search?q=taxi+booking" }
-      ]
-    });
   }
 });
 

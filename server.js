@@ -39,28 +39,27 @@ app.get('/api/searchHotels', async (req, res) => {
     let rawData = response.data;
     let hotelsList = [];
 
-    if (Array.isArray(rawData)) {
-      hotelsList = rawData;
-    } else if (rawData.data && Array.isArray(rawData.data)) {
-      hotelsList = rawData.data;
-    } else if (rawData.hotels && Array.isArray(rawData.hotels)) {
-      hotelsList = rawData.hotels;
-    } else if (rawData.result && Array.isArray(rawData.result)) {
-      hotelsList = rawData.result;
-    } else if (rawData.properties && Array.isArray(rawData.properties)) {
-      hotelsList = rawData.properties;
-    } else if (rawData.data?.hotels && Array.isArray(rawData.data.hotels)) {
-      hotelsList = rawData.data.hotels;
-    } else if (typeof rawData === 'object' && rawData !== null) {
-      for (let key in rawData) {
-        if (Array.isArray(rawData[key]) && rawData[key].length > 0) {
-          hotelsList = rawData[key];
+    // logs ke mutabiq response.data ke andar 'data' key hai
+    let actualData = rawData.data || rawData;
+
+    if (Array.isArray(actualData)) {
+      hotelsList = actualData;
+    } else if (actualData.hotels && Array.isArray(actualData.hotels)) {
+      hotelsList = actualData.hotels;
+    } else if (actualData.result && Array.isArray(actualData.result)) {
+      hotelsList = actualData.result;
+    } else if (actualData.properties && Array.isArray(actualData.properties)) {
+      hotelsList = actualData.properties;
+    } else if (typeof actualData === 'object' && actualData !== null) {
+      for (let key in actualData) {
+        if (Array.isArray(actualData[key]) && actualData[key].length > 0) {
+          hotelsList = actualData[key];
           break;
         }
       }
     }
 
-    console.log("Extracted Hotels Count:", hotelsList.length);
+    console.log("Final Extracted Hotels Count:", hotelsList.length);
 
     res.json({ 
       success: true, 

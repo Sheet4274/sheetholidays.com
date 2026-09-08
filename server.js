@@ -18,6 +18,7 @@ app.get('/api/searchHotels', async (req, res) => {
     
     console.log(`Querying Agoda -> ID: ${id}, checkin: ${checkin}, checkout: ${checkout}`);
 
+    // केवल यही असली और काम करने वाला एंडपॉइंट है
     const response = await axios.get(`https://${HOST}/hotels/search-overnight`, {
       params: {
         id: id || '1_318',
@@ -34,14 +35,12 @@ app.get('/api/searchHotels', async (req, res) => {
       }
     });
 
-    // यहाँ Agoda के डेटा की पहली 500 कैरेक्टर लॉग्स में प्रिंट होगी ताकि स्ट्रक्चर दिखे
-    console.log("AGODA FULL DATA KEYS:", Object.keys(response.data || {}));
-    console.log("AGODA DATA SAMPLE:", JSON.stringify(response.data).substring(0, 500));
+    console.log("AGODA SUCCESS! Keys:", Object.keys(response.data || {}));
 
     let rawData = response.data;
     let hotelsList = [];
 
-    // व्यापक फॉールबॅक (Fallback) ताकि किसी भी फॉर्मेट में डेटा हो तो पकड़ ले
+    // डेटा को निकालने के लिए सभी संभव रास्ते
     if (Array.isArray(rawData)) {
       hotelsList = rawData;
     } else if (rawData.data && Array.isArray(rawData.data)) {
@@ -55,7 +54,6 @@ app.get('/api/searchHotels', async (req, res) => {
     } else if (rawData.data?.hotels && Array.isArray(rawData.data.hotels)) {
       hotelsList = rawData.data.hotels;
     } else if (typeof rawData === 'object' && rawData !== null) {
-      // अगर किसी और की में एरे है
       for (let key in rawData) {
         if (Array.isArray(rawData[key]) && rawData[key].length > 0) {
           hotelsList = rawData[key];

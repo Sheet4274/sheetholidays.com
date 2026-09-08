@@ -9,17 +9,23 @@ app.use(express.json());
 const HOST = 'agoda-com.p.rapidapi.com'; 
 
 app.get('/', (req, res) => {
-  res.send('Sheet Hotels Agoda Direct API Online! 🚀');
+  res.send('Sheet Hotels Agoda API Online! 🚀');
 });
 
 app.get('/api/searchHotels', async (req, res) => {
   try {
-    let { id } = req.query;
+    let { id, checkin, checkout, adults, rooms } = req.query;
     
-    // Exact match to your curl parameters
+    console.log(`Querying Agoda -> ID: ${id}, In: ${checkin}, Out: ${checkout}`);
+
+    // Agoda API को जो जो पैरामीटर चाहिए, सब यहाँ पास कर रहे हैं
     const response = await axios.get(`https://${HOST}/hotels/search-overnight`, {
       params: {
-        id: id || '1_318'
+        id: id || '1_318',
+        checkInDate: checkin || '2026-10-01',
+        checkOutDate: checkout || '2026-10-05',
+        adults: adults || '2',
+        rooms: rooms || '1'
       },
       headers: {
         'Content-Type': 'application/json',
@@ -33,7 +39,7 @@ app.get('/api/searchHotels', async (req, res) => {
     let rawData = response.data;
     let hotelsList = [];
 
-    // Safe extraction matching Agoda's exact JSON tree
+    // सही एरे ढूंढने का लॉजिक
     if (Array.isArray(rawData)) {
       hotelsList = rawData;
     } else if (rawData.data && Array.isArray(rawData.data)) {
@@ -42,8 +48,9 @@ app.get('/api/searchHotels', async (req, res) => {
       hotelsList = rawData.hotels;
     } else if (rawData.result && Array.isArray(rawData.result)) {
       hotelsList = rawData.result;
+    } else if (rawData.data?.hotels && Array.isArray(rawData.data.hotels)) {
+      hotelsList = rawData.data.hotels;
     } else if (typeof rawData === 'object' && rawData !== null) {
-      // Find any array inside the object if structure varies
       for (let key in rawData) {
         if (Array.isArray(rawData[key]) && rawData[key].length > 0) {
           hotelsList = rawData[key];

@@ -1,81 +1,277 @@
+require('dotenv').config();
+
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
 
 const app = express();
+
 app.use(cors());
 app.use(express.json());
 
-const HOST = 'agoda-com.p.rapidapi.com'; 
+const HOST = 'agoda-com.p.rapidapi.com';
+const API_KEY = process.env.RAPIDAPI_KEY;
 
 app.get('/', (req, res) => {
-  res.send('Sheet Hotels Backend Active! 🚀');
+  res.json({
+    success: true,
+    message: 'Sheet Hotels Backend Active 🚀'
+  });
 });
 
+// ===============================
+// LOCATION ID RESOLVER
+// ===============================
+async function resolveLocationId(query) {
+  if (!query) {
+    return '1_318';
+  }
+
+  query = String(query).trim();
+
+  // Already an Agoda ID
+  if (/^\d+_\d+$/.test(query) || /^\d+$/.test(query)) {
+    return query;
+  }
+
+  // Popular cities
+  const popularMap = {
+    goa: '4153',
+    mumbai: '15560',
+    delhi: '14706',
+    'new delhi': '14706',
+    bangalore: '16538',
+    bengaluru: '16538',
+    hyderabad: '8803',
+    chennai: '17270',
+    kolkata: '1627',
+    jaipur: '11304',
+    agra: '15312',
+    lucknow: '1_318',
+    varanasi: '17136',
+    dubai: '18731',
+    pune: '16858',
+    ahmedabad: '16999',
+    rishikesh: '1404',
+    manali: '1720'
+  };
+
+  const key = query.toLowerCase();
+
+  if (popularMap[key]) {
+    console.log(`Using mapped Agoda ID: ${popularMap[key]}`);
+    return popularMap[key];
+  }
+
+  // Try Agoda destination search
+  try {
+    const result = await axios.get(
+      `https://${HOST}/api/v1/destinations/search`,
+      {
+        params: {
+          query: query,
+          language: 'en-us'
+        },
+        headers: {
+          'x-rapidapi-host': HOST,
+          'x-rapidapi-key': API_KEY
+        },
+        timeout: 15000
+      }
+    );
+
+    console.log(
+      'Destination API response:',
+      JSON.stringify(result.data, null, 2).slice(0, 5000)
+    );
+
+    const data = result.data?.data || result.data;
+
+    if (Array.isArray(data) && data.length > 0) {
+      const destination = data[0];
+
+      const id =
+        destination.id ||
+        destination.entityId ||
+        destination.destinationId ||
+        destination.cityId;
+
+      if (id) {
+        console.log(`Resolved "${query}" -> ${id}`);
+        return id;
+      }
+    }
+  } catch (error) {
+    console.log(
+      'Destination search failed:',
+      error.response?.data || error.message
+    );
+  }
+
+  return null;
+}
+
+// ===============================
+// HOTEL SEARCH
+// ===============================
 app.get('/api/searchHotels', async (req, res) => {
   try {
-    let { id, checkin, checkout, adults, rooms } = req.query;
-    
-    console.log(`Querying Agoda -> ID: ${id}, checkin: ${checkin}, checkout: ${checkout}`);
+    const {
+      id,
+      checkin,
+      checkout,
+      adults = '2',
+      rooms = '1'
+    } = req.query;
 
-    const response = await axios.get(`https://${HOST}/hotels/search-overnight`, {
-      params: {
-        id: id || '1_318',
-        checkinDate: checkin || '2026-10-01',
-        checkoutDate: checkout || '2026-10-05',
-        adults: adults || '2',
-        rooms: rooms || '1',
-        currency: 'INR'
-      },
-      headers: {
-        'Content-Type': 'application/json',
-        'x-rapidapi-host': HOST,
-        'x-rapidapi-key': process.env.RAPIDAPI_KEY || ''
-      }
-    });
-
-    let rawData = response.data;
-    let hotelsList = [];
-
-    // डीप सर्च लॉजिक: रिस्पॉन्स के अंदर किसी भी स्तर पर एरे (Array) ढूंढने के लिए
-    function findArrayInObject(obj) {
-      if (!obj || typeof obj !== 'object') return null;
-      for (let key in obj) {
-        if (Array.isArray(obj[key]) && obj[key].length > 0) {
-          // चेक करते हैं कि क्या इस एरे के अंदर होटल जैसी चीज़ें हैं
-          return obj[key];
-        }
-        if (typeof obj[key] === 'object' && obj[key] !== null) {
-          let found = findArrayInObject(obj[key]);
-          if (found) return found;
-        }
-      }
-      return null;
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: 'City or Agoda destination ID is required',
+        hotels: []
+      });
     }
 
-    if (Array.isArray(rawData)) {
-      hotelsList = rawData;
-    } else {
-      hotelsList = findArrayInObject(rawData) || [];
+    if (!checkin || !checkout) {
+      return res.status(400).json({
+        success: false,
+        error: 'checkin and checkout are required',
+        hotels: []
+      });
     }
 
-    console.log("Deep Searched Hotels Count:", hotelsList.length);
+    if (!API_KEY) {
+      return res.status(500).json({
+        success: false,
+        error: 'RAPIDAPI_KEY is missing on Render',
+        hotels: []
+      });
+    }
 
-    res.json({ 
-      success: true, 
-      count: hotelsList.length,
-      hotels: hotelsList 
+    const resolvedId = await resolveLocationId(id);
+
+    if (!resolvedId) {
+      return res.status(404).json({
+        success: false,
+        error: `Could not find Agoda destination for "${id}"`,
+        hotels: []
+      });
+    }
+
+    console.log('==============================');
+    console.log('HOTEL SEARCH');
+    console.log('Input:', id);
+    console.log('Resolved ID:', resolvedId);
+    console.log('Check-in:', checkin);
+    console.log('Check-out:', checkout);
+    console.log('Adults:', adults);
+    console.log('Rooms:', rooms);
+    console.log('==============================');
+
+    const response = await axios.get(
+      `https://${HOST}/hotels/search-overnight`,
+      {
+        params: {
+          id: resolvedId,
+          checkinDate: checkin,
+          checkoutDate: checkout,
+          adults: adults,
+          rooms: rooms,
+          currency: 'INR'
+        },
+        headers: {
+          'x-rapidapi-host': HOST,
+          'x-rapidapi-key': API_KEY
+        },
+        timeout: 30000
+      }
+    );
+
+    console.log(
+      'AGODA RAW RESPONSE:',
+      JSON.stringify(response.data, null, 2).slice(0, 10000)
+    );
+
+    const raw = response.data;
+
+    // ---------------------------------
+    // Find hotel-like arrays only
+    // ---------------------------------
+    function findHotels(obj) {
+      if (!obj || typeof obj !== 'object') {
+        return [];
+      }
+
+      if (Array.isArray(obj)) {
+        const hotelObjects = obj.filter(item => {
+          if (!item || typeof item !== 'object') return false;
+
+          const text = JSON.stringify(item).toLowerCase();
+
+          return (
+            text.includes('"hotelname"') ||
+            text.includes('"hotel_name"') ||
+            text.includes('"hotelid"') ||
+            text.includes('"hotel_id"') ||
+            text.includes('"propertyname"') ||
+            text.includes('"property_name"')
+          );
+        });
+
+        if (hotelObjects.length > 0) {
+          return hotelObjects;
+        }
+
+        return [];
+      }
+
+      for (const key of Object.keys(obj)) {
+        const found = findHotels(obj[key]);
+
+        if (found.length > 0) {
+          return found;
+        }
+      }
+
+      return [];
+    }
+
+    const hotels = findHotels(raw);
+
+    console.log('FINAL HOTEL COUNT:', hotels.length);
+
+    if (hotels.length === 0) {
+      return res.json({
+        success: false,
+        count: 0,
+        error: 'No hotels found in Agoda response',
+        hotels: [],
+        rawResponse: raw
+      });
+    }
+
+    return res.json({
+      success: true,
+      count: hotels.length,
+      hotels: hotels
     });
 
   } catch (error) {
-    console.error("Agoda API Error:", error.response?.data || error.message);
-    res.status(500).json({ 
-      success: false, 
+    console.error(
+      'AGODA ERROR:',
+      error.response?.status,
+      error.response?.data || error.message
+    );
+
+    return res.status(error.response?.status || 500).json({
+      success: false,
       error: error.response?.data || error.message,
-      hotels: [] 
+      hotels: []
     });
   }
 });
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// ===============================
+// SERVER
+// ===============================
+const

@@ -18,7 +18,6 @@ app.get('/api/searchHotels', async (req, res) => {
     
     console.log(`Querying Agoda -> ID: ${id}, checkin: ${checkin}, checkout: ${checkout}`);
 
-    // केवल यही असली और काम करने वाला एंडपॉइंट है
     const response = await axios.get(`https://${HOST}/hotels/search-overnight`, {
       params: {
         id: id || '1_318',
@@ -40,7 +39,6 @@ app.get('/api/searchHotels', async (req, res) => {
     let rawData = response.data;
     let hotelsList = [];
 
-    // डेटा को निकालने के लिए सभी संभव रास्ते
     if (Array.isArray(rawData)) {
       hotelsList = rawData;
     } else if (rawData.data && Array.isArray(rawData.data)) {

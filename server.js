@@ -18,7 +18,6 @@ app.get('/api/searchHotels', async (req, res) => {
     
     console.log(`Querying Agoda -> ID: ${id}, checkin: ${checkin}, checkout: ${checkout}`);
 
-    // असली और सही RapidAPI एंडपॉइंट और पैरामीटर्स
     const response = await axios.get(`https://${HOST}/hotels/search-overnight`, {
       params: {
         id: id || '1_318',
@@ -35,11 +34,14 @@ app.get('/api/searchHotels', async (req, res) => {
       }
     });
 
-    console.log("AGODA SUCCESS RESPONSE RECEIVED");
+    // यहाँ Agoda के डेटा की पहली 500 कैरेक्टर लॉग्स में प्रिंट होगी ताकि स्ट्रक्चर दिखे
+    console.log("AGODA FULL DATA KEYS:", Object.keys(response.data || {}));
+    console.log("AGODA DATA SAMPLE:", JSON.stringify(response.data).substring(0, 500));
 
     let rawData = response.data;
     let hotelsList = [];
 
+    // व्यापक फॉールबॅक (Fallback) ताकि किसी भी फॉर्मेट में डेटा हो तो पकड़ ले
     if (Array.isArray(rawData)) {
       hotelsList = rawData;
     } else if (rawData.data && Array.isArray(rawData.data)) {
@@ -48,9 +50,12 @@ app.get('/api/searchHotels', async (req, res) => {
       hotelsList = rawData.hotels;
     } else if (rawData.result && Array.isArray(rawData.result)) {
       hotelsList = rawData.result;
+    } else if (rawData.properties && Array.isArray(rawData.properties)) {
+      hotelsList = rawData.properties;
     } else if (rawData.data?.hotels && Array.isArray(rawData.data.hotels)) {
       hotelsList = rawData.data.hotels;
     } else if (typeof rawData === 'object' && rawData !== null) {
+      // अगर किसी और की में एरे है
       for (let key in rawData) {
         if (Array.isArray(rawData[key]) && rawData[key].length > 0) {
           hotelsList = rawData[key];
@@ -58,6 +63,8 @@ app.get('/api/searchHotels', async (req, res) => {
         }
       }
     }
+
+    console.log("Extracted Hotels Count:", hotelsList.length);
 
     res.json({ 
       success: true, 
@@ -75,5 +82,5 @@ app.get('/api/searchHotels', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

@@ -6,37 +6,33 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const HOST = 'booking-com15.p.rapidapi.com';
+// Agoda RapidAPI Host
+const HOST = 'agoda-com.p.rapidapi.com'; 
 
-// Safe headers extraction so it never crashes if env is missing
 const getHeaders = () => ({
   'x-rapidapi-host': HOST,
   'x-rapidapi-key': process.env.RAPIDAPI_KEY || ''
 });
 
 app.get('/', (req, res) => {
-  res.send('Sheet Hotels Backend is Online! 🚀');
+  res.send('Sheet Hotels (Agoda Powered) Backend is Online! 🚀');
 });
 
+// Agoda Hotel Search Route
 app.get('/api/searchHotels', async (req, res) => {
   try {
-    let { city, checkin, checkout, adults, rooms } = req.query;
+    let { id } = req.query; // Jaise tera example tha id=1_318 ya city ID
     
-    const response = await axios.get(`https://${HOST}/api/v1/hotels/searchHotels`, {
+    const response = await axios.get(`https://${HOST}/hotels/search-overnight`, {
       params: {
-        query: city || 'Goa',
-        arrival_date: checkin || '2026-10-01',
-        departure_date: checkout || '2026-10-05',
-        adults: adults || '2',
-        room_qty: rooms || '1',
-        currency_code: 'INR'
+        id: id || '1_318' // Default id agar kuch na mile
       },
       headers: getHeaders()
     });
 
     res.json(response.data);
   } catch (error) {
-    console.error("API Error Details:", error.response?.data || error.message);
+    console.error("Agoda API Error Details:", error.response?.data || error.message);
     res.status(500).json({ status: false, error: error.message });
   }
 });

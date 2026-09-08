@@ -9,35 +9,62 @@ app.use(express.json());
 const HOST = 'agoda-com.p.rapidapi.com'; 
 
 app.get('/', (req, res) => {
-  res.send('Sheet Hotels Agoda Backend Online! 🚀');
+  res.send('Sheet Hotels Agoda Direct API Online! 🚀');
 });
 
 app.get('/api/searchHotels', async (req, res) => {
   try {
-    let { id, checkin, checkout, adults, rooms } = req.query;
+    let { id } = req.query;
     
-    // Agoda API request with proper query parameters matching your curl logic
+    // Exact match to your curl parameters
     const response = await axios.get(`https://${HOST}/hotels/search-overnight`, {
       params: {
-        id: id || '1_318',
-        checkIn: checkin || '2026-10-01',
-        checkOut: checkout || '2026-10-05',
-        adults: adults || '2',
-        rooms: rooms || '1'
+        id: id || '1_318'
       },
       headers: {
+        'Content-Type': 'application/json',
         'x-rapidapi-host': HOST,
         'x-rapidapi-key': process.env.RAPIDAPI_KEY || ''
       }
     });
 
-    // Render logs me check karne ke liye ki Agoda kya bhej raha hai
-    console.log("AGODA API RESPONSE:", JSON.stringify(response.data));
+    console.log("AGODA RAW RESPONSE:", JSON.stringify(response.data));
 
-    res.json(response.data);
+    let rawData = response.data;
+    let hotelsList = [];
+
+    // Safe extraction matching Agoda's exact JSON tree
+    if (Array.isArray(rawData)) {
+      hotelsList = rawData;
+    } else if (rawData.data && Array.isArray(rawData.data)) {
+      hotelsList = rawData.data;
+    } else if (rawData.hotels && Array.isArray(rawData.hotels)) {
+      hotelsList = rawData.hotels;
+    } else if (rawData.result && Array.isArray(rawData.result)) {
+      hotelsList = rawData.result;
+    } else if (typeof rawData === 'object' && rawData !== null) {
+      // Find any array inside the object if structure varies
+      for (let key in rawData) {
+        if (Array.isArray(rawData[key]) && rawData[key].length > 0) {
+          hotelsList = rawData[key];
+          break;
+        }
+      }
+    }
+
+    res.json({ 
+      success: true, 
+      count: hotelsList.length,
+      hotels: hotelsList 
+    });
+
   } catch (error) {
     console.error("Agoda API Error:", error.response?.data || error.message);
-    res.status(500).json({ status: false, error: error.message });
+    res.status(500).json({ 
+      success: false, 
+      error: error.response?.data || error.message,
+      hotels: [] 
+    });
   }
 });
 

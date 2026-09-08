@@ -4,7 +4,6 @@ const cors = require('cors');
 
 const app = express();
 
-// CORS Headers पूरी तरह ओपन
 app.use(cors());
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Origin', '*');
@@ -17,9 +16,7 @@ app.use(express.json());
 const HOST = 'agoda-com.p.rapidapi.com';
 const API_KEY = process.env.RAPIDAPI_KEY;
 
-app.get('/', (req, res) => {
-  res.send('Backend Online');
-});
+app.get('/', (req, res) => res.send('Backend Online'));
 
 async function resolveLocation(city) {
   if (!city) return null;
@@ -53,7 +50,7 @@ async function resolveLocation(city) {
 
 app.get('/api/searchHotels', async (req, res) => {
   try {
-    const city = req.query.city || 'Srinagar';
+    const city = req.query.city || 'delhi';
     const destinationId = await resolveLocation(city);
     
     if (!destinationId) {
@@ -76,7 +73,19 @@ app.get('/api/searchHotels', async (req, res) => {
       timeout: 25000
     });
 
-    return res.json({ success: true, data: response.data });
+    // Cleaned Hotels Array Extraction
+    const rawData = response.data;
+    let rawHotels = rawData?.data?.citySearch?.properties || 
+                    rawData?.data?.properties || 
+                    rawData?.results || [];
+
+    const cleanedHotels = rawHotels.map(h => ({
+      name: h.propertyCaption || h.name || 'Luxury Hotel',
+      image: h.propertyImage?.url || h.images?.[0]?.url || 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500',
+      price: h.pricingInfo?.price?.formatted || h.price?.formatted || 'Check Price'
+    }));
+
+    return res.json({ success: true, hotels: cleanedHotels });
 
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });

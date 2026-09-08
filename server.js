@@ -9,21 +9,21 @@ app.use(express.json());
 const HOST = 'agoda-com.p.rapidapi.com'; 
 
 app.get('/', (req, res) => {
-  res.send('Sheet Hotels Agoda Live Backend Online! 🚀');
+  res.send('Sheet Hotels Agoda Live API Online! 🚀');
 });
 
 app.get('/api/searchHotels', async (req, res) => {
   try {
     let { id, checkin, checkout, adults, rooms } = req.query;
     
-    console.log(`Sending to Agoda -> ID: ${id}, CheckIn: ${checkin}, CheckOut: ${checkout}`);
+    console.log(`Searching Agoda -> Location: ${id}, In: ${checkin}, Out: ${checkout}`);
 
-    // Agoda API के असली पैरामीटर नाम यहाँ सेट किए गए हैं
-    const response = await axios.get(`https://${HOST}/hotels/search-overnight`, {
+    // Agoda का सही और लाइव सर्च एंडपॉइंट
+    const response = await axios.get(`https://${HOST}/api/v1/hotels/searchHotels`, {
       params: {
-        id: id || '1_318',
-        checkIn: checkin || '2026-10-01',
-        checkOut: checkout || '2026-10-05',
+        cityId: id || '1_318',
+        checkInDate: checkin || '2026-09-08',
+        checkOutDate: checkout || '2026-09-09',
         adults: adults || '2',
         rooms: rooms || '1',
         currency: 'INR',
@@ -36,11 +36,12 @@ app.get('/api/searchHotels', async (req, res) => {
       }
     });
 
-    console.log("AGODA RAW RESPONSE:", JSON.stringify(response.data));
+    console.log("AGODA RAW RESPONSE:", JSON.stringify(response.data).substring(0, 400));
 
     let rawData = response.data;
     let hotelsList = [];
 
+    // डेटा को सुरक्षित तरीके से बाहर निकालना
     if (Array.isArray(rawData)) {
       hotelsList = rawData;
     } else if (rawData.data && Array.isArray(rawData.data)) {

@@ -7,11 +7,10 @@ app.use(cors());
 
 app.get('/api/reviews', async (req, res) => {
   try {
-    const response = await axios.get('https://booking-com15.p.rapidapi.com/api/v1/hotels/getNearbyCities', {
+    // Hotel Search Endpoint (Sahi aur Working Parameters ke saath)
+    const response = await axios.get('https://booking-com15.p.rapidapi.com/api/v1/hotels/searchDestination', {
       params: {
-        latitude: req.query.latitude || '65.9667',
-        longitude: req.query.longitude || '-18.5333',
-        languagecode: 'en-us'
+        query: 'Delhi'
       },
       headers: {
         'x-rapidapi-host': 'booking-com15.p.rapidapi.com',

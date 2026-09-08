@@ -7,22 +7,22 @@ app.use(cors());
 
 app.get('/api/reviews', async (req, res) => {
   try {
-    const response = await axios.get('https://booking-com21.p.rapidapi.com/api/v1/attraction/getAttractionReviews', {
+    const response = await axios.get('https://booking-com15.p.rapidapi.com/api/v1/hotels/getNearbyCities', {
       params: {
-        // Query parameters (RapidAPI ke requirements ke hisab se)
-        id: req.query.id || '1'
+        latitude: req.query.latitude || '65.9667',
+        longitude: req.query.longitude || '-18.5333',
+        languagecode: 'en-us'
       },
       headers: {
-        'x-rapidapi-host': 'booking-com21.p.rapidapi.com',
+        'x-rapidapi-host': 'booking-com15.p.rapidapi.com',
         'x-rapidapi-key': process.env.RAPIDAPI_KEY
       }
     });
     res.json(response.data);
   } catch (error) {
-    // Exact RapidAPI error response send karega
     res.status(500).json({ 
       error: error.message, 
-      details: error.response ? error.response.data : 'No additional details' 
+      details: error.response ? error.response.data : 'No details' 
     });
   }
 });

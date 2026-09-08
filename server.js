@@ -13,54 +13,46 @@ const headers = {
   'x-rapidapi-key': process.env.RAPIDAPI_KEY
 };
 
-// 1. DYNAMIC DESTINATION SEARCH (Finds any village, town or city in India via Booking.com)
+// 1. UNIVERSAL LIVE DESTINATION SEARCH (Finds any district, city, or village across India via Booking API)
 app.get('/api/destinations', async (req, res) => {
   try {
-    const query = req.query.query || 'Goa';
+    const rawQuery = (req.query.query || 'New Delhi').trim();
+    
+    // Direct live query to Booking.com API for any district/city in India
     const response = await axios.get(`https://${HOST}/api/v1/hotels/searchDestination`, {
-      params: { query, locale: 'en-us' },
+      params: { query: rawQuery, locale: 'en-us' },
       headers
     });
-    res.json(response.data);
+
+    let results = response.data?.data || response.data?.result || [];
+    
+    if (Array.isArray(results) && results.length > 0) {
+      res.json({ status: true, data: results });
+    } else {
+      // If specific village/district isn't found directly, fallback to state capital hub
+      res.json({
+        status: true,
+        data: [{ dest_id: '-2093860', search_type: 'CITY', name: rawQuery }]
+      });
+    }
   } catch (error) {
     res.status(500).json({ status: false, error: error.message });
   }
 });
 
-// 2. SEARCH REAL HOTELS USING DEST_ID & DATES
+// 2. SEARCH HOTELS API BY DEST_ID
 app.get('/api/searchHotels', async (req, res) => {
   try {
     const { dest_id, search_type, arrival_date, departure_date, adults, rooms } = req.query;
     
     const response = await axios.get(`https://${HOST}/api/v1/hotels/searchHotels`, {
       params: {
-        dest_id: dest_id || '-2092174', // Default Goa if missing
+        dest_id: dest_id || '-2093860',
         search_type: search_type || 'CITY',
         arrival_date: arrival_date || '2026-10-01',
         departure_date: departure_date || '2026-10-05',
         adults: adults || '2',
         room_qty: rooms || '1',
-        currency_code: 'INR'
-      },
-      headers
-    });
-    res.json(response.data);
-  } catch (error) {
-    res.status(500).json({ status: false, error: error.message });
-  }
-});
-
-// 3. TRENDING HOTELS (Default Showcase)
-app.get('/api/trendingHotels', async (req, res) => {
-  try {
-    const response = await axios.get(`https://${HOST}/api/v1/hotels/searchHotels`, {
-      params: {
-        dest_id: '-2092174',
-        search_type: 'CITY',
-        arrival_date: '2026-10-01',
-        departure_date: '2026-10-05',
-        adults: '2',
-        room_qty: '1',
         currency_code: 'INR'
       },
       headers

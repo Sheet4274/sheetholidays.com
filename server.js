@@ -4,12 +4,13 @@ const cors = require('cors');
 
 const app = express();
 
-// 1. CORS पूरी तरह खोल दिया है ताकि Google Sites / GitHub कहीं से भी ब्लॉक न हो
-app.use(cors({
-  origin: '*',
-  methods: ['GET', 'POST', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
-}));
+// CORS Headers पूरी तरह ओपन
+app.use(cors());
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  next();
+});
 
 app.use(express.json());
 
@@ -17,10 +18,9 @@ const HOST = 'agoda-com.p.rapidapi.com';
 const API_KEY = process.env.RAPIDAPI_KEY;
 
 app.get('/', (req, res) => {
-  res.send('SheetHolidays Backend Live! 🚀');
+  res.send('Backend Online');
 });
 
-// City Name to ID resolver
 async function resolveLocation(city) {
   if (!city) return null;
   const value = String(city).trim();
@@ -51,20 +51,11 @@ async function resolveLocation(city) {
   return null;
 }
 
-// API Endpoint
 app.get('/api/searchHotels', async (req, res) => {
   try {
     const city = req.query.city || 'Srinagar';
-    const checkin = req.query.checkin || '2026-10-01';
-    const checkout = req.query.checkout || '2026-10-05';
-    const adults = req.query.adults || '2';
-    const rooms = req.query.rooms || '1';
-
-    if (!API_KEY) {
-      return res.status(500).json({ success: false, error: 'RAPIDAPI_KEY missing in Render' });
-    }
-
     const destinationId = await resolveLocation(city);
+    
     if (!destinationId) {
       return res.status(404).json({ success: false, error: `City not found: ${city}` });
     }
@@ -72,10 +63,10 @@ app.get('/api/searchHotels', async (req, res) => {
     const response = await axios.get(`https://${HOST}/hotels/search-overnight`, {
       params: {
         id: destinationId,
-        checkinDate: checkin,
-        checkoutDate: checkout,
-        adults: adults,
-        rooms: rooms,
+        checkinDate: '2026-10-01',
+        checkoutDate: '2026-10-05',
+        adults: '2',
+        rooms: '1',
         currency: 'INR'
       },
       headers: {
@@ -85,13 +76,10 @@ app.get('/api/searchHotels', async (req, res) => {
       timeout: 25000
     });
 
-    return res.json({ success: true, destinationId, data: response.data });
+    return res.json({ success: true, data: response.data });
 
   } catch (error) {
-    return res.status(error.response?.status || 500).json({
-      success: false,
-      error: error.response?.data || error.message
-    });
+    return res.status(500).json({ success: false, error: error.message });
   }
 });
 

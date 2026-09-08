@@ -18,52 +18,35 @@ const API_KEY = process.env.RAPIDAPI_KEY;
 
 app.get('/', (req, res) => res.send('Backend Online'));
 
-// City Name to City ID
-async function resolveLocation(city) {
-  if (!city) return '14706';
-  const cityMap = {
-    goa: '4153', mumbai: '15560', delhi: '14706',
-    bangalore: '16538', hyderabad: '8803', chennai: '17270',
-    srinagar: '318', jaipur: '8260', kolkata: '16281'
-  };
-
-  const cityKey = city.toLowerCase().trim();
-  if (cityMap[cityKey]) return cityMap[cityKey];
-
-  try {
-    const response = await axios.get(`https://${HOST}/hotels/auto-complete`, {
-      params: { text: city, language: 'en-us' },
-      headers: { 'x-rapidapi-host': HOST, 'x-rapidapi-key': API_KEY },
-      timeout: 10000
-    });
-    const locations = response.data?.data || response.data?.results || [];
-    if (locations.length > 0) {
-      return locations[0].id || locations[0].cityId || '14706';
-    }
-  } catch (error) {
-    console.error('Location error:', error.message);
-  }
-  return '14706';
-}
+const CITY_IDS = {
+  goa: '4153',
+  mumbai: '15560',
+  delhi: '14706',
+  bangalore: '16538',
+  hyderabad: '8803',
+  chennai: '17270',
+  srinagar: '318',
+  jaipur: '8260'
+};
 
 app.get('/api/searchHotels', async (req, res) => {
   try {
-    const city = req.query.city || 'delhi';
-    const destinationId = await resolveLocation(city);
+    const cityInput = (req.query.city || 'delhi').toLowerCase().trim();
+    const destinationId = CITY_IDS[cityInput] || '14706';
 
-    // Dynamic Dates (आज से 30 दिन बाद की तारीख)
-    const today = new Date();
-    const checkin = new Date(today.setDate(today.getDate() + 30)).toISOString().split('T')[0];
-    const checkout = new Date(today.setDate(today.getDate() + 3)).toISOString().split('T')[0];
+    // Dates matching Agoda's exact query format
+    const checkInDate = '2026-10-01';
+    const checkOutDate = '2026-10-05';
 
     const response = await axios.get(`https://${HOST}/hotels/search-overnight`, {
       params: {
         id: destinationId,
-        checkinDate: checkin,
-        checkoutDate: checkout,
+        checkIn: checkInDate,     // Correct parameter name (CamelCase)
+        checkOut: checkOutDate,   // Correct parameter name (CamelCase)
         adults: '2',
         rooms: '1',
-        currency: 'INR'
+        currency: 'INR',
+        language: 'en-us'
       },
       headers: {
         'x-rapidapi-host': HOST,
@@ -74,18 +57,14 @@ app.get('/api/searchHotels', async (req, res) => {
 
     const rawData = response.data;
     
-    // Exact Agoda Response Parsing
-    let properties = [];
-    if (rawData?.data?.citySearch?.properties) {
-      properties = rawData.data.citySearch.properties;
-    } else if (rawData?.results) {
-      properties = rawData.results;
-    } else if (rawData?.properties) {
-      properties = rawData.properties;
-    }
+    let properties = rawData?.data?.citySearch?.properties || 
+                     rawData?.data?.properties || 
+                     rawData?.results || 
+                     rawData?.properties || 
+                     [];
 
     const hotels = properties.map(h => ({
-      name: h.propertyCaption || h.name || 'Agoda Listed Hotel',
+      name: h.propertyCaption || h.name || h.hotelName || 'Agoda Listed Hotel',
       image: h.propertyImage?.url || h.images?.[0]?.url || 'https://via.placeholder.com/400x200?text=Hotel+Image',
       price: h.pricingInfo?.price?.formatted || (h.price ? `₹${h.price}` : 'Check Rates')
     }));

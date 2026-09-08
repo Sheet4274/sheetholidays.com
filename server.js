@@ -21,8 +21,8 @@ app.get('/api/searchHotels', async (req, res) => {
     const response = await axios.get(`https://${HOST}/hotels/search-overnight`, {
       params: {
         id: id || '1_318',
-        checkinDate: checkin || '2026-09-08',
-        checkoutDate: checkout || '2026-09-09',
+        checkinDate: checkin || '2026-10-01',
+        checkoutDate: checkout || '2026-10-05',
         adults: adults || '2',
         rooms: rooms || '1',
         currency: 'INR'
@@ -34,32 +34,32 @@ app.get('/api/searchHotels', async (req, res) => {
       }
     });
 
-    console.log("AGODA SUCCESS! Keys:", Object.keys(response.data || {}));
-
     let rawData = response.data;
     let hotelsList = [];
 
-    // logs ke mutabiq response.data ke andar 'data' key hai
-    let actualData = rawData.data || rawData;
-
-    if (Array.isArray(actualData)) {
-      hotelsList = actualData;
-    } else if (actualData.hotels && Array.isArray(actualData.hotels)) {
-      hotelsList = actualData.hotels;
-    } else if (actualData.result && Array.isArray(actualData.result)) {
-      hotelsList = actualData.result;
-    } else if (actualData.properties && Array.isArray(actualData.properties)) {
-      hotelsList = actualData.properties;
-    } else if (typeof actualData === 'object' && actualData !== null) {
-      for (let key in actualData) {
-        if (Array.isArray(actualData[key]) && actualData[key].length > 0) {
-          hotelsList = actualData[key];
-          break;
+    // डीप सर्च लॉजिक: रिस्पॉन्स के अंदर किसी भी स्तर पर एरे (Array) ढूंढने के लिए
+    function findArrayInObject(obj) {
+      if (!obj || typeof obj !== 'object') return null;
+      for (let key in obj) {
+        if (Array.isArray(obj[key]) && obj[key].length > 0) {
+          // चेक करते हैं कि क्या इस एरे के अंदर होटल जैसी चीज़ें हैं
+          return obj[key];
+        }
+        if (typeof obj[key] === 'object' && obj[key] !== null) {
+          let found = findArrayInObject(obj[key]);
+          if (found) return found;
         }
       }
+      return null;
     }
 
-    console.log("Final Extracted Hotels Count:", hotelsList.length);
+    if (Array.isArray(rawData)) {
+      hotelsList = rawData;
+    } else {
+      hotelsList = findArrayInObject(rawData) || [];
+    }
+
+    console.log("Deep Searched Hotels Count:", hotelsList.length);
 
     res.json({ 
       success: true, 

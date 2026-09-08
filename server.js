@@ -4,11 +4,14 @@ const cors = require('cors');
 
 const app = express();
 app.use(cors());
-app.use(express.static('public'));
 
 app.get('/api/reviews', async (req, res) => {
   try {
     const response = await axios.get('https://booking-com21.p.rapidapi.com/api/v1/attraction/getAttractionReviews', {
+      params: {
+        // Query parameters (RapidAPI ke requirements ke hisab se)
+        id: req.query.id || '1'
+      },
       headers: {
         'x-rapidapi-host': 'booking-com21.p.rapidapi.com',
         'x-rapidapi-key': process.env.RAPIDAPI_KEY
@@ -16,7 +19,11 @@ app.get('/api/reviews', async (req, res) => {
     });
     res.json(response.data);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    // Exact RapidAPI error response send karega
+    res.status(500).json({ 
+      error: error.message, 
+      details: error.response ? error.response.data : 'No additional details' 
+    });
   }
 });
 

@@ -34,15 +34,19 @@ app.get('/api/searchHotels', async (req, res) => {
     const cityInput = (req.query.city || 'delhi').toLowerCase().trim();
     const destinationId = CITY_IDS[cityInput] || '14706';
 
-    // Dates matching Agoda's exact query format
-    const checkInDate = '2026-10-01';
-    const checkOutDate = '2026-10-05';
+    // Auto Dynamic Dates: Always calculates valid future dates from TODAY
+    const now = new Date();
+    const checkinObj = new Date(now.getTime() + (5 * 24 * 60 * 60 * 1000));
+    const checkoutObj = new Date(now.getTime() + (7 * 24 * 60 * 60 * 1000));
+
+    const checkin = checkinObj.toISOString().split('T')[0];
+    const checkout = checkoutObj.toISOString().split('T')[0];
 
     const response = await axios.get(`https://${HOST}/hotels/search-overnight`, {
       params: {
         id: destinationId,
-        checkIn: checkInDate,     // Correct parameter name (CamelCase)
-        checkOut: checkOutDate,   // Correct parameter name (CamelCase)
+        checkinDate: checkin,
+        checkoutDate: checkout,
         adults: '2',
         rooms: '1',
         currency: 'INR',
@@ -57,21 +61,35 @@ app.get('/api/searchHotels', async (req, res) => {
 
     const rawData = response.data;
     
+    // Extracting nested hotels array
     let properties = rawData?.data?.citySearch?.properties || 
                      rawData?.data?.properties || 
                      rawData?.results || 
                      rawData?.properties || 
                      [];
 
-    const hotels = properties.map(h => ({
-      name: h.propertyCaption || h.name || h.hotelName || 'Agoda Listed Hotel',
-      image: h.propertyImage?.url || h.images?.[0]?.url || 'https://via.placeholder.com/400x200?text=Hotel+Image',
-      price: h.pricingInfo?.price?.formatted || (h.price ? `₹${h.price}` : 'Check Rates')
-    }));
+    // Extract structure dynamically
+    const hotels = properties.map(h => {
+      let img = 'https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500';
+      if (h.propertyImage?.url) img = h.propertyImage.url;
+      else if (h.images?.[0]?.url) img = h.images[0].url;
+
+      let prc = 'Check Rates';
+      if (h.pricingInfo?.price?.formatted) prc = h.pricingInfo.price.formatted;
+      else if (h.price?.formatted) prc = h.price.formatted;
+      else if (h.price) prc = `₹${h.price}`;
+
+      return {
+        name: h.propertyCaption || h.name || h.hotelName || 'Agoda Luxury Hotel',
+        image: img,
+        price: prc
+      };
+    });
 
     return res.json({ success: true, count: hotels.length, hotels: hotels });
 
   } catch (error) {
+    console.error("API Error:", error.response?.data || error.message);
     return res.status(500).json({ 
       success: false, 
       error: error.response?.data?.message || error.message 

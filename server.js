@@ -4,16 +4,12 @@ const cors = require('cors');
 const path = require('path');
 
 const app = express();
-
 app.use(cors());
-
-// Public static files serve karne ke liye
 app.use(express.static(path.join(__dirname, 'public')));
 
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || "booking-com15.p.rapidapi.com";
 
-// 🏨 Hotel API Route
 app.get('/api/hotels', async (req, res) => {
   try {
     const { city, checkin, checkout } = req.query;
@@ -29,12 +25,14 @@ app.get('/api/hotels', async (req, res) => {
       }
     });
 
-    if (!destRes.data || !destRes.data.data || destRes.data.data.length === 0) {
-      return res.status(404).json({ error: "Destination not found" });
+    const destData = destRes.data && destRes.data.data ? destRes.data.data : [];
+    if (destData.length === 0) {
+      return res.status(404).json({ error: "City/Destination not found in API database" });
     }
 
-    const destId = destRes.data.data[0].dest_id;
-    const searchType = destRes.data.data[0].search_type || "city";
+    // Exact dest_id and search_type extract
+    const destId = destData[0].dest_id;
+    const searchType = destData[0].search_type || destData[0].dest_type || "city";
 
     // Step 2: Hotel Search
     const hotelRes = await axios.get(`https://${RAPIDAPI_HOST}/api/v1/hotels/searchHotels`, {
@@ -45,7 +43,11 @@ app.get('/api/hotels', async (req, res) => {
         departure_date: checkout,
         adults: '2',
         room_qty: '1',
-        page_number: '1'
+        page_number: '1',
+        units: 'metric',
+        temperature_unit: 'c',
+        languagecode: 'en-us',
+        currency_code: 'INR'
       },
       headers: {
         'x-rapidapi-key': RAPIDAPI_KEY,
@@ -56,20 +58,17 @@ app.get('/api/hotels', async (req, res) => {
     res.json(hotelRes.data);
 
   } catch (err) {
-    console.error("Backend Error:", err.message);
+    console.error("Backend API Error:", err.response ? err.response.data : err.message);
     res.status(500).json({ 
-      error: "API Call Failed", 
+      error: "API Request Failed", 
       details: err.response ? err.response.data : err.message 
     });
   }
 });
 
-// 🌐 Catch-All Route (Fixes "Cannot GET /" Issue)
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`Server started on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

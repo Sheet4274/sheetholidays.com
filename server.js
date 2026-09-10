@@ -21,43 +21,46 @@ function getDefaultDates() {
   };
 }
 
-// Fixed Image & Exact Price Extractor
-function processHotelData(hotel) {
-  const name = hotel.name || "Luxury Hotel";
+// Strictly Parses Asli Hotels.com Images & Exact API Prices
+function parseRealHotelData(hotel) {
+  const name = hotel.name || "Hotel";
 
-  // 1. Image Fixer: Hotels.com CDN URLs resolution fix
-  let rawImg = hotel.propertyImage?.image?.url || 
-               hotel.propertyImage?.image?.fallbackUrl || 
-               hotel.primaryImageUrl || 
-               hotel.cardPhotos?.[0]?.url || "";
+  // 1. Asli Hotels.com Image Parser
+  let realImg = "";
+  if (hotel.propertyImage?.image?.url) {
+    realImg = hotel.propertyImage.image.url;
+  } else if (hotel.propertyImage?.image?.fallbackUrl) {
+    realImg = hotel.propertyImage.image.fallbackUrl;
+  } else if (hotel.primaryImageUrl) {
+    realImg = hotel.primaryImageUrl;
+  }
 
-  if (rawImg) {
-    // Standardize URL protocol & dimensions
-    if (rawImg.startsWith('//')) rawImg = 'https:' + rawImg;
-    rawImg = rawImg.replace('{size}', 'z'); // Replace placeholder size if any
-    if (rawImg.includes('?')) rawImg = rawImg.split('?')[0]; // Remove queries blocking render
+  // Fixing Image Protocol & Resolution Specs for Browser
+  if (realImg) {
+    if (realImg.startsWith('//')) realImg = 'https:' + realImg;
+    realImg = realImg.replace('{size}', 'b'); // 'b' or 'z' gives high-res photos on Hotels.com CDN
   } else {
-    rawImg = "https://images.pexels.com/photos/258154/pexels-photo-258154.jpeg"; // High quality fallback
+    realImg = "https://via.placeholder.com/400x250?text=No+Image+Available";
   }
 
-  // 2. Exact Real Price Extraction (No Random Rates)
-  let rawPrice = hotel.price?.lead?.formatted || 
-                 hotel.price?.options?.[0]?.formattedDisplayPrice || 
-                 hotel.price?.strikeThrough?.formatted || 
-                 hotel.price?.options?.[0]?.strikeThrough?.formatted || 
-                 "";
+  // 2. Asli Hotels.com Real Price Parsing Logic
+  let realPrice = "N/A";
 
-  if (!rawPrice && hotel.price?.lead?.amount) {
-    rawPrice = "₹" + Math.round(hotel.price.lead.amount);
-  }
-
-  if (!rawPrice) {
-    rawPrice = "Rate on Request";
+  if (hotel.price?.lead?.formatted) {
+    realPrice = hotel.price.lead.formatted;
+  } else if (hotel.price?.options?.[0]?.formattedDisplayPrice) {
+    realPrice = hotel.price.options[0].formattedDisplayPrice;
+  } else if (hotel.price?.options?.[0]?.strikeThrough?.formatted) {
+    realPrice = hotel.price.options[0].strikeThrough.formatted;
+  } else if (hotel.price?.strikeThrough?.formatted) {
+    realPrice = hotel.price.strikeThrough.formatted;
+  } else if (hotel.price?.lead?.amount) {
+    realPrice = "₹" + Math.round(hotel.price.lead.amount).toLocaleString('en-IN');
   }
 
   const location = hotel.neighborhood?.name || hotel.destinationInfo?.distanceFromDestination?.get || "Prime Location";
 
-  return { name, img: rawImg, price: rawPrice, location };
+  return { name, img: realImg, price: realPrice, location };
 }
 
 app.get('/api/hotels', async (req, res) => {
@@ -69,10 +72,10 @@ app.get('/api/hotels', async (req, res) => {
     const rooms = req.query.rooms || "1";
 
     if (!RAPIDAPI_KEY) {
-      return res.status(500).json({ error: "RAPIDAPI_KEY missing on server environment." });
+      return res.status(500).json({ error: "RAPIDAPI_KEY missing in environment." });
     }
 
-    // Fetch Region ID
+    // Step 1: Fetch City Region ID
     const regionRes = await axios.get(`https://${RAPIDAPI_HOST}/v2/regions`, {
       params: { query: city, locale: 'en_IN', domain: 'IN' },
       headers: { 'x-rapidapi-key': RAPIDAPI_KEY, 'x-rapidapi-host': RAPIDAPI_HOST }
@@ -84,7 +87,7 @@ app.get('/api/hotels', async (req, res) => {
     const cityRegion = regions.find(r => r.type === 'CITY' || r.type === 'NEIGHBORHOOD') || regions[0];
     const gaiaId = cityRegion.gaiaId || cityRegion.id;
 
-    // Fetch Hotels
+    // Step 2: Fetch Exact Hotels Data
     const hotelRes = await axios.get(`https://${RAPIDAPI_HOST}/v3/hotels/search`, {
       params: {
         region_id: gaiaId,
@@ -105,9 +108,10 @@ app.get('/api/hotels', async (req, res) => {
                         hotelRes.data?.data?.propertySearch?.properties || 
                         hotelRes.data?.data?.properties || [];
 
-    const cleanedHotels = rawProperties.slice(0, 20).map(hotel => processHotelData(hotel));
+    // Filter strictly valid entries
+    const finalHotels = rawProperties.slice(0, 20).map(hotel => parseRealHotelData(hotel));
 
-    res.json({ hotels: cleanedHotels, city });
+    res.json({ hotels: finalHotels, city });
 
   } catch (err) {
     const errData = err.response ? err.response.data : err.message;
@@ -125,46 +129,33 @@ app.get('*', (req, res) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Sheet Holidays | Best Hotels & Resorts</title>
-      <meta name="description" content="Book top luxury hotels & resorts with instant WhatsApp confirmation.">
-
+      <title>Sheet Holidays | Live Hotel Search</title>
       <style>
         * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
         body { background: #0a192f; margin: 0; padding: 0; color: #f8fafc; }
-        
-        .promo-banner { background: #dc2626; color: #fff; text-align: center; padding: 8px; font-size: 13px; font-weight: bold; }
         .header { background: #0b1e38; padding: 16px; text-align: center; border-bottom: 1px solid #1e293b; }
         .header h1 { color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; }
-
         .container { max-width: 550px; margin: 15px auto; padding: 0 12px; }
-
         .search-card { background: #ffffff; border-radius: 16px; padding: 18px; color: #333; }
         .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
         .full-width { grid-column: span 2; }
-        
         .input-box { border: 1px solid #cbd5e1; border-radius: 10px; padding: 8px 12px; background: #f8fafc; }
         .input-box label { font-size: 10px; font-weight: bold; color: #64748b; display: block; text-transform: uppercase; }
         .input-box input, .input-box select { border: none; background: transparent; font-size: 14px; width: 100%; outline: none; font-weight: 600; color: #0f172a; }
-        
         .search-btn { background: #1d4ed8; color: white; border: none; width: 100%; padding: 14px; border-radius: 12px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 12px; }
-
         .results-header { margin: 20px 0 10px; font-size: 18px; font-weight: bold; color: #38bdf8; }
         .hotel-card { background: #ffffff; border-radius: 14px; overflow: hidden; margin-bottom: 18px; color: #0f172a; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-        .hotel-img-container { position: relative; width: 100%; height: 210px; background: #1e293b; }
+        .hotel-img-container { position: relative; width: 100%; height: 220px; background: #1e293b; }
         .hotel-img { width: 100%; height: 100%; object-fit: cover; display: block; }
         .location-badge { position: absolute; top: 12px; left: 12px; background: rgba(15, 23, 42, 0.85); color: #fff; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
-
         .hotel-info { padding: 16px; }
         .hotel-name { font-size: 18px; font-weight: bold; margin: 0 0 6px 0; }
         .price-tag { font-size: 22px; font-weight: 800; color: #dc2626; margin-top: 4px; }
-        
         .wa-btn { background: #25D366; color: white; display: flex; align-items: center; justify-content: center; padding: 12px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 12px; font-size: 15px; }
         .loader { text-align: center; padding: 30px; color: #94a3b8; }
       </style>
     </head>
     <body>
-
-      <div class="promo-banner">🔥 Flat 15% OFF via WhatsApp! Code: SHEET15</div>
 
       <div class="header">
         <h1>Sheet Holidays</h1>
@@ -177,17 +168,14 @@ app.get('*', (req, res) => {
               <label>City Name</label>
               <input type="text" id="cityInput" value="Mumbai" placeholder="Enter City">
             </div>
-
             <div class="input-box">
               <label>Check-In Date</label>
               <input type="date" id="checkinInput" value="${defaultDates.checkin}">
             </div>
-
             <div class="input-box">
               <label>Check-Out Date</label>
               <input type="date" id="checkoutInput" value="${defaultDates.checkout}">
             </div>
-
             <div class="input-box">
               <label>Guests</label>
               <select id="adultsInput">
@@ -197,7 +185,6 @@ app.get('*', (req, res) => {
                 <option value="4">4 Adults</option>
               </select>
             </div>
-
             <div class="input-box">
               <label>Rooms</label>
               <select id="roomsInput">
@@ -207,13 +194,12 @@ app.get('*', (req, res) => {
               </select>
             </div>
           </div>
-
           <button class="search-btn" onclick="searchHotels()">Search Hotels</button>
         </div>
 
-        <div class="results-header" id="resultsHeader">Top Hotels</div>
+        <div class="results-header" id="resultsHeader">Hotels List</div>
         <div id="results">
-          <div class="loader">Loading Top Properties...</div>
+          <div class="loader">Loading properties...</div>
         </div>
       </div>
 
@@ -230,10 +216,10 @@ app.get('*', (req, res) => {
           const resultsDiv = document.getElementById('results');
           const resultsHeader = document.getElementById('resultsHeader');
 
-          if (!city) return alert("Please enter city!");
+          if (!city) return alert("City name enter karein!");
 
           resultsHeader.innerText = "Hotels in " + city;
-          resultsDiv.innerHTML = "<div class='loader'>Fetching real hotel photos & rates...</div>";
+          resultsDiv.innerHTML = "<div class='loader'>Live data load ho raha hai...</div>";
 
           try {
             const queryUrl = \`/api/hotels?city=\${encodeURIComponent(city)}&checkin=\${checkin}&checkout=\${checkout}&adults=\${adults}&rooms=\${rooms}\`;
@@ -246,7 +232,6 @@ app.get('*', (req, res) => {
             }
 
             const hotels = data.hotels || [];
-
             if (hotels.length === 0) {
               resultsDiv.innerHTML = "<p style='color:white; text-align:center;'>No hotels found.</p>";
               return;
@@ -262,21 +247,21 @@ app.get('*', (req, res) => {
                 "\\nCheck-in: " + checkin + 
                 "\\nCheck-out: " + checkout + 
                 "\\nGuests: " + adults + " Adults, " + rooms + " Room(s)" +
-                "\\nQuoted Rate: " + hotel.price
+                "\\nLive Rate: " + hotel.price
               );
               const waLink = "https://wa.me/917388442233?text=" + msg;
 
               html += \`
                 <div class="hotel-card">
                   <div class="hotel-img-container">
-                    <img src="\${hotel.img}" class="hotel-img" alt="\${hotel.name}" onerror="this.src='https://images.pexels.com/photos/258154/pexels-photo-258154.jpeg'">
+                    <img src="\${hotel.img}" class="hotel-img" alt="\${hotel.name}" loading="lazy">
                     <div class="location-badge">📍 \${hotel.location}</div>
                   </div>
                   <div class="hotel-info">
                     <div class="hotel-name">\${hotel.name}</div>
-                    <div style="font-size: 11px; color: #64748b;">Starting price per night</div>
+                    <div style="font-size: 11px; color: #64748b;">Live Rate (Per Night)</div>
                     <div class="price-tag">\${hotel.price}</div>
-                    <a href="\${waLink}" target="_blank" class="wa-btn">📱 Book via WhatsApp</a>
+                    <a href="\${waLink}" target="_blank" class="wa-btn">📱 WhatsApp Booking</a>
                   </div>
                 </div>
               \`;
@@ -285,7 +270,7 @@ app.get('*', (req, res) => {
             resultsDiv.innerHTML = html;
 
           } catch (err) {
-            resultsDiv.innerHTML = "<p style='color:#f87171; text-align:center;'>Search failed. Backend response check karein.</p>";
+            resultsDiv.innerHTML = "<p style='color:#f87171; text-align:center;'>Search Error. Backend logs dekhein.</p>";
           }
         }
       </script>

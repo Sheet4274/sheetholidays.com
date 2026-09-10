@@ -18,12 +18,17 @@ app.get('/api/hotels', async (req, res) => {
       return res.status(400).json({ error: "City name is required" });
     }
 
-    // Step 1: Get Region ID for the City
+    // Default dates if missing
+    const today = new Date();
+    const defaultCheckin = checkin || new Date(today.setDate(today.getDate() + 7)).toISOString().split('T')[0];
+    const defaultCheckout = checkout || new Date(today.setDate(today.getDate() + 3)).toISOString().split('T')[0];
+
+    // Step 1: Fetch Gaia Region ID for City
     const regionRes = await axios.get(`https://${RAPIDAPI_HOST}/v2/regions`, {
       params: {
         query: city,
-        locale: 'en_US',
-        domain: 'US'
+        locale: 'en_IN',
+        domain: 'IN'
       },
       headers: {
         'x-rapidapi-key': RAPIDAPI_KEY,
@@ -32,7 +37,6 @@ app.get('/api/hotels', async (req, res) => {
     });
 
     const regions = regionRes.data && regionRes.data.data ? regionRes.data.data : [];
-    // Filter to find the first valid CITY type region
     const cityRegion = regions.find(r => r.type === 'CITY' || r.type === 'NEIGHBORHOOD') || regions[0];
 
     if (!cityRegion || !cityRegion.gaiaId) {
@@ -41,14 +45,14 @@ app.get('/api/hotels', async (req, res) => {
 
     const regionId = cityRegion.gaiaId;
 
-    // Step 2: Search Hotels using Gaia Region ID
+    // Step 2: Fetch Hotels via Region ID
     const hotelRes = await axios.get(`https://${RAPIDAPI_HOST}/v2/hotels/search`, {
       params: {
         region_id: regionId,
-        locale: 'en_US',
-        domain: 'US',
-        checkin_date: checkin || '2026-10-01',
-        checkout_date: checkout || '2026-10-05',
+        locale: 'en_IN',
+        domain: 'IN',
+        checkin_date: defaultCheckin,
+        checkout_date: defaultCheckout,
         sort_order: 'RECOMMENDED',
         adults_number: '2',
         currency: 'INR',
@@ -64,9 +68,10 @@ app.get('/api/hotels', async (req, res) => {
 
   } catch (err) {
     const errorDetails = err.response ? err.response.data : err.message;
-    console.error("Hotels.com API Error:", errorDetails);
+    console.error("Hotels.com RapidAPI Error:", JSON.stringify(errorDetails));
+    
     res.status(500).json({ 
-      error: "API Request Failed", 
+      error: "Server Connection Error!", 
       details: errorDetails 
     });
   }

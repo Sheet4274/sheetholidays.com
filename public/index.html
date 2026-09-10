@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sheet Holidays Search Engine</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: Arial, sans-serif; }
+    body { background: #f8fafc; padding: 15px; }
+
+    .nav-tabs { display: flex; gap: 8px; margin-bottom: 15px; }
+    .tab-btn {
+      flex: 1; padding: 12px; border: none; background: #cbd5e1; font-weight: bold;
+      border-radius: 8px; cursor: pointer; color: #1e293b; text-align: center;
+    }
+    .tab-btn.active { background: #075cff; color: #fff; }
+
+    .search-card {
+      background: #fff; padding: 15px; border-radius: 12px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.1); border: 1px solid #e2e8f0; margin-bottom: 20px;
+    }
+    .grid-form { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+    .field { display: flex; flex-direction: column; }
+    .field label { font-size: 11px; font-weight: bold; color: #64748b; margin-bottom: 4px; }
+    .field input { height: 40px; border: 1px solid #cbd5e1; border-radius: 6px; padding: 0 10px; font-weight: bold; outline: none; }
+
+    .btn-submit {
+      grid-column: 1 / -1; height: 44px; background: #075cff; color: #fff;
+      border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 15px; margin-top: 8px;
+    }
+
+    .hotels-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 15px; }
+    .hotel-card { background: #fff; border-radius: 10px; border: 1px solid #cbd5e1; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; }
+    .hotel-img { height: 160px; width: 100%; object-fit: cover; background: #e2e8f0; }
+    .card-body { padding: 12px; }
+    .hotel-title { font-size: 15px; font-weight: bold; color: #0f172a; margin-bottom: 4px; }
+    
+    .btn-wa {
+      background: #25d366; color: #fff; border: none; padding: 10px; width: 100%;
+      border-radius: 6px; font-weight: bold; cursor: pointer; display: block; text-align: center; text-decoration: none;
+    }
+
+    .tab-content { display: none; }
+    .tab-content.active { display: block; }
+  </style>
+</head>
+<body>
+
+  <div class="nav-tabs">
+    <button type="button" class="tab-btn active" id="btn-h" onclick="switchTab('hotelTab', 'btn-h')">HOTELS</button>
+    <button type="button" class="tab-btn" id="btn-f" onclick="switchTab('flightTab', 'btn-f')">FLIGHTS</button>
+  </div>
+
+  <div class="search-card">
+    <div id="hotelTab" class="tab-content active">
+      <div class="grid-form">
+        <div class="field" style="grid-column: span 2;">
+          <label>DESTINATION</label>
+          <input type="text" id="h_city" value="Goa">
+        </div>
+        <div class="field">
+          <label>CHECK-IN</label>
+          <input type="date" id="h_checkin">
+        </div>
+        <div class="field">
+          <label>CHECK-OUT</label>
+          <input type="date" id="h_checkout">
+        </div>
+        <button type="button" class="btn-submit" onclick="searchHotels()">SEARCH HOTELS</button>
+      </div>
+    </div>
+
+    <div id="flightTab" class="tab-content">
+      <div class="grid-form">
+        <div class="field">
+          <label>FROM</label>
+          <input type="text" id="f_from" value="Delhi">
+        </div>
+        <div class="field">
+          <label>TO</label>
+          <input type="text" id="f_to" value="Mumbai">
+        </div>
+        <div class="field">
+          <label>DATE</label>
+          <input type="date" id="f_date">
+        </div>
+        <button type="button" class="btn-submit" style="background:#25d366;" onclick="bookFlightWA()">INQUIRE FLIGHTS VIA WHATSAPP</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="status" style="text-align:center; font-weight:bold; margin-bottom:15px; font-size:14px; color:#0f172a;"></div>
+  <div class="hotels-grid" id="hotelsGrid"></div>
+
+  <script>
+    window.onload = function() {
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById("h_checkin").value = today;
+      document.getElementById("h_checkout").value = today;
+      document.getElementById("f_date").value = today;
+    };
+
+    function switchTab(tabId, btnId) {
+      document.querySelectorAll('.tab-content').forEach(e => e.classList.remove('active'));
+      document.querySelectorAll('.tab-btn').forEach(e => e.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      document.getElementById(btnId).classList.add('active');
+    }
+
+    async function searchHotels() {
+      const city = document.getElementById("h_city").value.trim();
+      const checkin = document.getElementById("h_checkin").value;
+      const checkout = document.getElementById("h_checkout").value;
+      const status = document.getElementById("status");
+      const grid = document.getElementById("hotelsGrid");
+
+      grid.innerHTML = "";
+      status.innerHTML = "Fetching live hotels for " + city + "...";
+
+      try {
+        const res = await fetch(`/api/hotels?city=${encodeURIComponent(city)}&checkin=${checkin}&checkout=${checkout}`);
+        const data = await res.json();
+
+        if (res.status !== 200 || data.error) {
+          status.innerHTML = `<span style="color:red;">Error: ${data.error || 'Failed to load'}</span>`;
+          return;
+        }
+
+        const list = data.data.hotels || data.data.result || [];
+        if (list.length === 0) {
+          status.innerHTML = "No hotels found.";
+          return;
+        }
+
+        status.innerHTML = "<span style='color:green;'>Hotels Loaded Successfully!</span>";
+
+        list.slice(0, 10).forEach(h => {
+          const name = h.property ? h.property.name : (h.hotel_name || "Hotel");
+          const photo = (h.property && h.property.photoUrls) ? h.property.photoUrls[0] : "https://images.pexels.com/photos/258154/pexels-photo-258154.jpeg?auto=compress&cs=tinysrgb&w=800";
+
+          grid.innerHTML += `
+            <div class="hotel-card">
+              <div>
+                <img src="${photo}" class="hotel-img" onerror="this.src='https://images.pexels.com/photos/258154/pexels-photo-258154.jpeg?auto=compress&cs=tinysrgb&w=800'">
+                <div class="card-body">
+                  <div class="hotel-title">${name}</div>
+                  <div style="font-size:12px; color:#64748b;">📍 ${city}</div>
+                </div>
+              </div>
+              <div class="card-body">
+                <button type="button" class="btn-wa" onclick="bookHotelWA('${name.replace(/'/g, "")}')">BOOK VIA WHATSAPP</button>
+              </div>
+            </div>
+          `;
+        });
+      } catch (err) {
+        status.innerHTML = "<span style='color:red;'>Server Connection Error!</span>";
+      }
+    }
+
+    function bookHotelWA(name) {
+      const city = document.getElementById("h_city").value;
+      const msg = `Hello SheetHolidays! 👋\n\nI want to book Hotel:\n🏨 ${name}\n📍 ${city}`;
+      window.open(`https://wa.me/917388442233?text=${encodeURIComponent(msg)}`, '_blank');
+    }
+
+    function bookFlightWA() {
+      const from = document.getElementById("f_from").value;
+      const to = document.getElementById("f_to").value;
+      const date = document.getElementById("f_date").value;
+      const msg = `Hello SheetHolidays! 👋\n\nFlight Inquiry:\n🛫 ${from}\n🛬 ${to}\n📅 ${date}`;
+      window.open(`https://wa.me/917388442233?text=${encodeURIComponent(msg)}`, '_blank');
+    }
+  </script>
+</body>
+</html>

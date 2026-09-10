@@ -126,6 +126,9 @@ app.get('*', (req, res) => {
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       
+      <!-- FIX 1: Referrer policy tag added so Hotels.com CDN does not block localhost -->
+      <meta name="referrer" content="no-referrer">
+      
       <title>Sheet Holidays - Book Best Hotels & Resorts Online</title>
       <meta name="description" content="Book Luxury Hotels, Resorts, and Budget Stays at Best Rates with Sheet Holidays. Get instant discounts on WhatsApp booking.">
       <meta name="keywords" content="Hotels booking, Sheet Holidays, Goa Hotels, Mumbai Resorts, Holiday Packages">
@@ -225,10 +228,8 @@ app.get('*', (req, res) => {
       </div>
 
       <script>
-        // Exact Deep Path Extraction for RapidAPI Hotels.com Pricing
         function parsePrice(hotel) {
           try {
-            // RapidAPI v3 lineItems Object Lookup
             const lineItem = hotel.price?.displayMessages?.[0]?.lineItems?.[0]?.price;
             if (lineItem?.formatted) return lineItem.formatted;
 
@@ -248,17 +249,27 @@ app.get('*', (req, res) => {
           return "Rates on Request";
         }
 
-        // Real Image Extractor with Hotfix Resolution Parser
+        // FIX 2: Check cardPhotos and all nested RapidAPI v3 paths
         function parseImage(hotel) {
           try {
-            let rawUrl = hotel.propertyImage?.image?.url || 
-                         hotel.propertyImage?.url || 
-                         hotel.propertyImage?.fallbackUrl ||
-                         hotel.mapMarker?.propertyImage?.url || 
-                         hotel.summary?.propertyImage?.image?.url || "";
+            let rawUrl = "";
+
+            // Check cardPhotos array
+            if (hotel.cardPhotos && hotel.cardPhotos.length > 0) {
+              rawUrl = hotel.cardPhotos[0]?.image?.url || hotel.cardPhotos[0]?.url || "";
+            }
+
+            // Check standard propertyImage paths
+            if (!rawUrl) {
+              rawUrl = hotel.propertyImage?.image?.url || 
+                       hotel.propertyImage?.url || 
+                       hotel.propertyImage?.fallbackUrl ||
+                       hotel.mapMarker?.propertyImage?.url || 
+                       hotel.summary?.propertyImage?.image?.url || "";
+            }
 
             if (rawUrl) {
-              // Replace placeholder '{size}' with 'z' (High Resolution Image Variant)
+              // Replace placeholder '{size}' with 'z' for high resolution
               rawUrl = rawUrl.replace('{size}', 'z');
               if (rawUrl.startsWith('//')) {
                 rawUrl = 'https:' + rawUrl;
@@ -288,7 +299,7 @@ app.get('*', (req, res) => {
 
             html += \`
               <div class="hotel-card">
-                <img src="\${img}" class="hotel-img" alt="\${name}" loading="lazy" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600&auto=format&fit=crop';">
+                <img src="\${img}" class="hotel-img" alt="\${name}" loading="lazy" referrerpolicy="no-referrer" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600&auto=format&fit=crop';">
                 <div class="hotel-body">
                   <div class="hotel-name">\${name}</div>
                   <div class="location-badge">📍 \${city}</div>

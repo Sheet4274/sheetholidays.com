@@ -1,31 +1,56 @@
-// server.js
 const express = require('express');
-const cors = require('cors');
 const axios = require('axios');
+const cors = require('cors');
+const path = require('path');
 
 const app = express();
-app.use(cors()); // CORS Bypass
+app.use(cors());
+app.use(express.static(path.join(__dirname, 'public')));
 
+// Environment Variable se Key uthayega
+const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
+const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || "booking-com15.p.rapidapi.com";
+
+// 🏨 Hotel Search API Proxy Route
 app.get('/api/hotels', async (req, res) => {
-  const { destination, checkin, checkout, adults, rooms } = req.query;
-
   try {
-    // Apne RapidAPI ya Agoda API key aur Host lagayein
-    const options = {
-      method: 'GET',
-      url: 'https://agoda-com.p.rapidapi.com/hotels/search', // Apne endpoint according update karein
-      params: { destination, checkin, checkout, adults, rooms },
-      headers: {
-        'x-rapidapi-key': 'YOUR_RAPIDAPI_KEY_HERE',
-        'x-rapidapi-host': 'agoda-com.p.rapidapi.com'
-      }
-    };
+    const { city, checkin, checkout } = req.query;
 
-    const response = await axios.request(options);
-    res.json({ status: true, data: response.data });
-  } catch (error) {
-    res.status(500).json({ status: false, error: error.message });
+    if (!city) return res.status(400).json({ error: "City is required" });
+
+    // Step 1: Destination ID Fetch
+    const destRes = await axios.get(`https://${RAPIDAPI_HOST}/api/v1/hotels/searchDestination`, {
+      params: { query: city },
+      headers: { 'x-rapidapi-key': RAPIDAPI_KEY, 'x-rapidapi-host': RAPIDAPI_HOST }
+    });
+
+    if (!destRes.data.data || destRes.data.data.length === 0) {
+      return res.status(404).json({ error: "Destination not found" });
+    }
+
+    const destId = destRes.data.data[0].dest_id;
+    const searchType = destRes.data.data[0].search_type || "city";
+
+    // Step 2: Hotel Search
+    const hotelRes = await axios.get(`https://${RAPIDAPI_HOST}/api/v1/hotels/searchHotels`, {
+      params: {
+        dest_id: destId,
+        search_type: searchType,
+        arrival_date: checkin,
+        departure_date: checkout,
+        adults: '2',
+        room_qty: '1',
+        page_number: '1'
+      },
+      headers: { 'x-rapidapi-key': RAPIDAPI_KEY, 'x-rapidapi-host': RAPIDAPI_HOST }
+    });
+
+    res.json(hotelRes.data);
+  } catch (err) {
+    console.error(err.message);
+    res.status(500).json({ error: "Failed to fetch hotels from RapidAPI", details: err.message });
   }
 });
 
-app.listen(5000, () => console.log('Server running on port 5000'));
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));

@@ -8,46 +8,51 @@ app.use(cors());
 app.use(express.static(path.join(__dirname, 'public')));
 
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
-const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || "booking-com15.p.rapidapi.com";
+const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || "hotels-com-provider.p.rapidapi.com";
 
 app.get('/api/hotels', async (req, res) => {
   try {
     const { city, checkin, checkout } = req.query;
 
-    if (!city) return res.status(400).json({ error: "City is required" });
+    if (!city) {
+      return res.status(400).json({ error: "City name is required" });
+    }
 
-    // Step 1: Destination Search
-    const destRes = await axios.get(`https://${RAPIDAPI_HOST}/api/v1/hotels/searchDestination`, {
-      params: { query: city },
+    // Step 1: Get Region ID for the City
+    const regionRes = await axios.get(`https://${RAPIDAPI_HOST}/v2/regions`, {
+      params: {
+        query: city,
+        locale: 'en_US',
+        domain: 'US'
+      },
       headers: {
         'x-rapidapi-key': RAPIDAPI_KEY,
         'x-rapidapi-host': RAPIDAPI_HOST
       }
     });
 
-    const destData = destRes.data && destRes.data.data ? destRes.data.data : [];
-    if (destData.length === 0) {
-      return res.status(404).json({ error: "City/Destination not found in API database" });
+    const regions = regionRes.data && regionRes.data.data ? regionRes.data.data : [];
+    // Filter to find the first valid CITY type region
+    const cityRegion = regions.find(r => r.type === 'CITY' || r.type === 'NEIGHBORHOOD') || regions[0];
+
+    if (!cityRegion || !cityRegion.gaiaId) {
+      return res.status(404).json({ error: "City region not found" });
     }
 
-    // Exact dest_id and search_type extract
-    const destId = destData[0].dest_id;
-    const searchType = destData[0].search_type || destData[0].dest_type || "city";
+    const regionId = cityRegion.gaiaId;
 
-    // Step 2: Hotel Search
-    const hotelRes = await axios.get(`https://${RAPIDAPI_HOST}/api/v1/hotels/searchHotels`, {
+    // Step 2: Search Hotels using Gaia Region ID
+    const hotelRes = await axios.get(`https://${RAPIDAPI_HOST}/v2/hotels/search`, {
       params: {
-        dest_id: destId,
-        search_type: searchType,
-        arrival_date: checkin,
-        departure_date: checkout,
-        adults: '2',
-        room_qty: '1',
-        page_number: '1',
-        units: 'metric',
-        temperature_unit: 'c',
-        languagecode: 'en-us',
-        currency_code: 'INR'
+        region_id: regionId,
+        locale: 'en_US',
+        domain: 'US',
+        checkin_date: checkin || '2026-10-01',
+        checkout_date: checkout || '2026-10-05',
+        sort_order: 'RECOMMENDED',
+        adults_number: '2',
+        currency: 'INR',
+        page_number: '1'
       },
       headers: {
         'x-rapidapi-key': RAPIDAPI_KEY,
@@ -58,10 +63,11 @@ app.get('/api/hotels', async (req, res) => {
     res.json(hotelRes.data);
 
   } catch (err) {
-    console.error("Backend API Error:", err.response ? err.response.data : err.message);
+    const errorDetails = err.response ? err.response.data : err.message;
+    console.error("Hotels.com API Error:", errorDetails);
     res.status(500).json({ 
       error: "API Request Failed", 
-      details: err.response ? err.response.data : err.message 
+      details: errorDetails 
     });
   }
 });

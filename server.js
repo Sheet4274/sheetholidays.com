@@ -17,7 +17,7 @@ const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || "hotels-com-provider.p.rapida
 const API_BASE = `https://${RAPIDAPI_HOST}`;
 
 // ----------------------------------------------------
-// DATES
+// DATES HELPER
 // ----------------------------------------------------
 function defaultDates() {
   const now = new Date();
@@ -34,18 +34,15 @@ function defaultDates() {
     return `${y}-${m}-${day}`;
   };
 
-  return {
-    checkin: format(checkin),
-    checkout: format(checkout)
-  };
+  return { checkin: format(checkin), checkout: format(checkout) };
 }
 
 // ----------------------------------------------------
-// HOTELS.COM REGION / CITY SEARCH
+// REGION FINDER (HOTELS.COM)
 // ----------------------------------------------------
 async function findRegion(city) {
   const response = await axios.get(`${API_BASE}/v2/regions`, {
-    params: { query: city, locale: "en_IN", domain: "IN" },
+    params: { query: city, locale: "en_US", domain: "US" },
     headers: {
       "x-rapidapi-key": RAPIDAPI_KEY,
       "x-rapidapi-host": RAPIDAPI_HOST
@@ -58,12 +55,19 @@ async function findRegion(city) {
     throw new Error(`City '${city}' not found.`);
   }
 
-  const cityRegion = regions.find(r => r.type === "CITY" || r.type === "NEIGHBORHOOD") || regions[0];
-  return cityRegion.gaiaId || cityRegion.id;
+  // Find CITY or NEIGHBORHOOD or pick the first item
+  const selected = regions.find(r => r.type === "CITY" || r.type === "NEIGHBORHOOD") || regions[0];
+  const gaiaId = selected.gaiaId || selected.id;
+
+  if (!gaiaId) {
+    throw new Error(`Region ID not found for '${city}'.`);
+  }
+
+  return { gaiaId, name: selected.regionNames?.displayName || city };
 }
 
 // ----------------------------------------------------
-// PARSERS FOR HOTELS.COM
+// PARSERS
 // ----------------------------------------------------
 function parsePrice(hotel) {
   try {
@@ -84,19 +88,15 @@ function parsePrice(hotel) {
 function parseImage(hotel) {
   try {
     let rawUrl = "";
-
     if (Array.isArray(hotel.cardPhotos) && hotel.cardPhotos.length > 0) {
       rawUrl = hotel.cardPhotos[0]?.image?.url || hotel.cardPhotos[0]?.url || "";
     }
-
     if (!rawUrl && Array.isArray(hotel.propertyImages) && hotel.propertyImages.length > 0) {
       rawUrl = hotel.propertyImages[0]?.image?.url || hotel.propertyImages[0]?.url || "";
     }
-
     if (!rawUrl) {
       rawUrl = hotel.propertyImage?.image?.url || hotel.propertyImage?.url || "";
     }
-
     if (rawUrl) {
       rawUrl = rawUrl.replace("{size}", "z");
       if (rawUrl.startsWith("//")) rawUrl = "https:" + rawUrl;
@@ -107,16 +107,16 @@ function parseImage(hotel) {
 }
 
 // ----------------------------------------------------
-// SEARCH API ENDPOINT (HOTELS.COM)
+// SEARCH ENDPOINT
 // ----------------------------------------------------
 app.get("/api/hotels", async (req, res) => {
   try {
     if (!RAPIDAPI_KEY) {
-      return res.status(500).json({ status: false, error: "RAPIDAPI_KEY missing on Render" });
+      return res.status(500).json({ status: false, error: "RAPIDAPI_KEY missing on Render environment variables" });
     }
 
     let { city, checkin, checkout, adults, rooms } = req.query;
-    city = city || "Goa";
+    city = city || "Mumbai";
     const dates = defaultDates();
 
     checkin = checkin || dates.checkin;
@@ -124,13 +124,13 @@ app.get("/api/hotels", async (req, res) => {
     adults = adults || "2";
     rooms = rooms || "1";
 
-    const gaiaId = await findRegion(city);
+    const { gaiaId, name: cityName } = await findRegion(city);
 
     const response = await axios.get(`${API_BASE}/v3/hotels/search`, {
       params: {
         region_id: gaiaId,
-        locale: "en_IN",
-        domain: "IN",
+        locale: "en_US",
+        domain: "US",
         checkin_date: checkin,
         checkout_date: checkout,
         sort_order: "RECOMMENDED",
@@ -146,9 +146,12 @@ app.get("/api/hotels", async (req, res) => {
       timeout: 30000
     });
 
-    const rawProperties = response.data?.properties || response.data?.data?.propertySearch?.properties || [];
+    const properties =
+      response.data?.properties ||
+      response.data?.data?.propertySearch?.properties ||
+      [];
 
-    const hotels = rawProperties.slice(0, 15).map(h => ({
+    const hotels = properties.slice(0, 15).map(h => ({
       hotel_id: h.id,
       name: h.name || "Luxury Stay",
       rating: h.reviews?.score || h.star || null,
@@ -158,7 +161,7 @@ app.get("/api/hotels", async (req, res) => {
 
     res.json({
       status: true,
-      destination: { name: city, region_id: gaiaId },
+      destination: { name: cityName, region_id: gaiaId },
       dates: { checkin, checkout },
       guests: { adults, rooms },
       hotels
@@ -219,7 +222,7 @@ input, select { width: 100%; border: 1px solid #334155; background: #07111f; col
   <div class="search">
     <div class="field">
       <label>DESTINATION</label>
-      <input id="city" value="Goa" placeholder="Goa, Mumbai, Delhi...">
+      <input id="city" value="Mumbai" placeholder="Mumbai, Goa, Delhi...">
     </div>
     <div class="row">
       <div class="field">

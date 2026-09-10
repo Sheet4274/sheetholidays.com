@@ -94,10 +94,13 @@
 
   <script>
     window.onload = function() {
-      const today = new Date().toISOString().split('T')[0];
-      document.getElementById("h_checkin").value = today;
-      document.getElementById("h_checkout").value = today;
-      document.getElementById("f_date").value = today;
+      const today = new Date();
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+
+      document.getElementById("h_checkin").value = today.toISOString().split('T')[0];
+      document.getElementById("h_checkout").value = tomorrow.toISOString().split('T')[0];
+      document.getElementById("f_date").value = today.toISOString().split('T')[0];
     };
 
     function switchTab(tabId, btnId) {
@@ -126,17 +129,30 @@
           return;
         }
 
-        const list = data.data.hotels || data.data.result || [];
-        if (list.length === 0) {
-          status.innerHTML = "No hotels found.";
+        // Multiple property pathways parsing
+        let list = [];
+        if (data.data) {
+          list = data.data.hotels || data.data.result || data.data || [];
+        } else if (data.result) {
+          list = data.result;
+        }
+
+        if (!Array.isArray(list) || list.length === 0) {
+          status.innerHTML = "No hotels found for selected dates. Try changing destination or dates.";
           return;
         }
 
         status.innerHTML = "<span style='color:green;'>Hotels Loaded Successfully!</span>";
 
         list.slice(0, 10).forEach(h => {
-          const name = h.property ? h.property.name : (h.hotel_name || "Hotel");
-          const photo = (h.property && h.property.photoUrls) ? h.property.photoUrls[0] : "https://images.pexels.com/photos/258154/pexels-photo-258154.jpeg?auto=compress&cs=tinysrgb&w=800";
+          const name = h.property ? h.property.name : (h.hotel_name || h.name || "Hotel");
+          let photo = "https://images.pexels.com/photos/258154/pexels-photo-258154.jpeg?auto=compress&cs=tinysrgb&w=800";
+          
+          if (h.property && h.property.photoUrls && h.property.photoUrls.length > 0) {
+            photo = h.property.photoUrls[0];
+          } else if (h.max_photo_url) {
+            photo = h.max_photo_url;
+          }
 
           grid.innerHTML += `
             <div class="hotel-card">
@@ -160,7 +176,7 @@
 
     function bookHotelWA(name) {
       const city = document.getElementById("h_city").value;
-      const msg = `Hello SheetHolidays! 👋\n\nI want to book Hotel:\n🏨 ${name}\n📍 ${city}`;
+      const msg = `Hello SheetHolidays! 👋\n\nI want to book Hotel [PROMO: SHEET2026]:\n🏨 ${name}\n📍 ${city}`;
       window.open(`https://wa.me/917388442233?text=${encodeURIComponent(msg)}`, '_blank');
     }
 
@@ -168,7 +184,7 @@
       const from = document.getElementById("f_from").value;
       const to = document.getElementById("f_to").value;
       const date = document.getElementById("f_date").value;
-      const msg = `Hello SheetHolidays! 👋\n\nFlight Inquiry:\n🛫 ${from}\n🛬 ${to}\n📅 ${date}`;
+      const msg = `Hello SheetHolidays! 👋\n\nFlight Inquiry [PROMO: SHEET2026]:\n🛫 ${from}\n🛬 ${to}\n📅 ${date}`;
       window.open(`https://wa.me/917388442233?text=${encodeURIComponent(msg)}`, '_blank');
     }
   </script>

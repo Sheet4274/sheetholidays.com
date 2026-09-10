@@ -20,7 +20,7 @@ function getDefaultDates() {
   };
 }
 
-// Strictly filtering out 5-star hotels and pulling only 3-star, normal & budget stays
+// Strictly Fetching 3-Star and Budget Hotels Across India (Filtering out luxury/5-star)
 app.get('/api/hotels', async (req, res) => {
   try {
     const city = req.query.city || "Mumbai";
@@ -28,11 +28,10 @@ app.get('/api/hotels', async (req, res) => {
       return res.status(500).json({ error: "GOOGLE_API_KEY missing in environment variables." });
     }
 
-    // Queries strictly targeting 3-star, budget, and normal clean stays (Excluding luxury/5-star)
     const queryTypes = [
       `3 star hotels in ${city}`,
-      `budget family hotels in ${city}`,
-      `affordable clean lodges in ${city}`
+      `comfort business hotels in ${city}`,
+      `family hotels in ${city}`
     ];
 
     let allResults = [];
@@ -50,11 +49,10 @@ app.get('/api/hotels', async (req, res) => {
       }
     }
 
-    // Remove duplicates and filter out luxury keywords just to be 100% sure
     const uniqueMap = new Map();
     allResults.forEach(item => {
       const nameLower = (item.name || "").toLowerCase();
-      const isLuxury = nameLower.includes('taj') || nameLower.includes('oberoi') || nameLower.includes('marriott') || nameLower.includes('hyatt') || nameLower.includes('radisson') || nameLower.includes('luxury') || nameLower.includes('palace') || nameLower.includes('grand');
+      const isLuxury = nameLower.includes('taj') || nameLower.includes('oberoi') || nameLower.includes('marriott') || nameLower.includes('hyatt') || nameLower.includes('radisson') || nameLower.includes('luxury') || nameLower.includes('palace') || nameLower.includes('grand') || nameLower.includes('leela') || nameLower.includes('ITC');
       
       if (item.place_id && !isLuxury) {
         uniqueMap.set(item.place_id, item);
@@ -62,16 +60,12 @@ app.get('/api/hotels', async (req, res) => {
     });
 
     const results = Array.from(uniqueMap.values());
+    if (results.length === 0) return res.json({ hotels: [], city });
 
-    if (results.length === 0) {
-      return res.json({ hotels: [], city });
-    }
-
-    // Format up to 30 budget/3-star hotels with 8-10 photos
     const hotels = results.slice(0, 30).map((place, index) => {
       const name = place.name;
       const location = place.formatted_address || place.vicinity || city;
-      const rating = place.rating ? `⭐ ${place.rating} (${place.user_ratings_total || 0} reviews)` : "⭐ Verified Stay";
+      const rating = place.rating ? `⭐ ${place.rating} (${place.user_ratings_total || 0} reviews)` : "⭐ 3-Star Verified";
       
       let photos = [];
       if (place.photos && place.photos.length > 0) {
@@ -80,18 +74,21 @@ app.get('/api/hotels', async (req, res) => {
         );
       }
 
-      const fallbackImages = [
+      const diversePool = [
         "https://images.unsplash.com/photo-1590490360182-c33d57733427?auto=format&fit=crop&w=800&q=80",
         "https://images.unsplash.com/photo-1596394516093-501ba68a0ba6?auto=format&fit=crop&w=800&q=80",
         "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=800&q=80",
         "https://images.unsplash.com/photo-1566665797739-1674de7a421a?auto=format&fit=crop&w=800&q=80",
         "https://images.unsplash.com/photo-1591088398332-8a7791972843?auto=format&fit=crop&w=800&q=80",
         "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1507652313519-d4e9174996dd?auto=format&fit=crop&w=800&q=80"
+        "https://images.unsplash.com/photo-1507652313519-d4e9174996dd?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1584132967334-10e028bd69f7?auto=format&fit=crop&w=800&q=80"
       ];
 
+      let counter = 0;
       while (photos.length < 8) {
-        photos.push(fallbackImages[photos.length % fallbackImages.length]);
+        photos.push(diversePool[(index + counter) % diversePool.length]);
+        counter++;
       }
 
       return {
@@ -101,9 +98,15 @@ app.get('/api/hotels', async (req, res) => {
         rating,
         photos,
         roomsData: [
-          { type: "Standard Normal Room (AC + WiFi)" },
-          { type: "Deluxe 3-Star Room (Breakfast Included)" },
+          { type: "Standard Room (AC + Queen Bed)" },
+          { type: "Executive Deluxe Room (City View)" },
           { type: "Family Triple Room (Extra Bed)" }
+        ],
+        mealsData: [
+          { type: "Room Only (No Meals)" },
+          { type: "Room + Breakfast (CP Plan)" },
+          { type: "Breakfast & Dinner (MAP Plan - Recommended)" },
+          { type: "All Meals Included (AP Plan)" }
         ]
       };
     });
@@ -111,8 +114,8 @@ app.get('/api/hotels', async (req, res) => {
     res.json({ hotels, city });
 
   } catch (err) {
-    console.error("Google Places API Error:", err.message);
-    res.status(500).json({ error: "Google Places API Failed", details: err.message });
+    console.error("API Error:", err.message);
+    res.status(500).json({ error: "API Failed", details: err.message });
   }
 });
 
@@ -125,25 +128,31 @@ app.get('*', (req, res) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Sheet Hotels | Best Budget & 3-Star Stays</title>
+      <title>Sheet Hotels | Pan-India 3-Star Stays</title>
       <style>
         * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        body { background: #f8fafc; margin: 0; padding: 0; color: #1e293b; }
+        body { background: #f1f5f9; margin: 0; padding: 0; color: #1e293b; }
         
         .header { background: #0f172a; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; color: #fff; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .logo { font-size: 20px; font-weight: 900; color: #38bdf8; letter-spacing: 0.5px; }
+        .logo { font-size: 20px; font-weight: 900; color: #38bdf8; }
         .tagline { font-size: 11px; color: #94a3b8; }
+
+        .promo-ticker { background: #dc2626; color: #fff; text-align: center; padding: 8px; font-size: 12px; font-weight: 800; }
 
         .hero-banner { background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); padding: 25px 15px; color: #fff; }
         .search-container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 16px; padding: 20px; box-shadow: 0 15px 30px rgba(0,0,0,0.2); color: #333; }
         
-        .search-title { font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 14px; display: flex; align-items: center; gap: 6px; }
+        .search-title { font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 14px; }
         .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; position: relative; }
         .full-width { grid-column: span 2; }
         
         .input-box { border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 10px 14px; background: #f8fafc; }
         .input-box label { font-size: 10px; font-weight: 800; color: #64748b; display: block; text-transform: uppercase; margin-bottom: 2px; }
         .input-box input, .input-box select { border: none; background: transparent; font-size: 15px; width: 100%; outline: none; font-weight: 700; color: #0f172a; }
+
+        .quick-cities { display: flex; gap: 6px; overflow-x: auto; padding: 10px 0 5px 0; white-space: nowrap; }
+        .quick-city-pill { background: #f1f5f9; border: 1px solid #cbd5e1; padding: 6px 12px; border-radius: 20px; font-size: 12px; font-weight: 700; color: #334155; cursor: pointer; flex-shrink: 0; }
+        .quick-city-pill:hover { background: #2563eb; color: #fff; border-color: #2563eb; }
 
         .suggestions-box { position: absolute; top: 75px; left: 0; right: 0; background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; z-index: 100; max-height: 180px; overflow-y: auto; display: none; box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
         .suggestion-item { padding: 10px 14px; font-size: 14px; font-weight: 600; color: #334155; cursor: pointer; border-bottom: 1px solid #f1f5f9; }
@@ -152,9 +161,8 @@ app.get('*', (req, res) => {
         .search-btn { background: #2563eb; color: white; border: none; width: 100%; padding: 15px; border-radius: 12px; font-size: 16px; font-weight: 800; cursor: pointer; margin-top: 14px; box-shadow: 0 4px 12px rgba(37,99,235,0.3); }
 
         .container { max-width: 600px; margin: 20px auto; padding: 0 12px; }
-        .results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-size: 18px; font-weight: 800; color: #0f172a; }
+        .results-header { margin-bottom: 15px; font-size: 18px; font-weight: 800; color: #0f172a; }
         
-        /* Fixed overflow bug so dropdown menus never get cut */
         .hotel-card { background: #ffffff; border-radius: 16px; margin-bottom: 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; position: relative; }
         
         .slider-container { position: relative; width: 100%; height: 240px; background: #0f172a; border-top-left-radius: 16px; border-top-right-radius: 16px; overflow: hidden; }
@@ -166,6 +174,7 @@ app.get('*', (req, res) => {
         .next-btn { right: 10px; }
         
         .rating-badge { position: absolute; top: 12px; right: 12px; background: #10b981; color: #fff; padding: 5px 10px; border-radius: 8px; font-size: 12px; font-weight: 800; z-index: 5; }
+        .star-tag { position: absolute; top: 12px; left: 12px; background: #0284c7; color: #fff; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 800; z-index: 5; }
         .image-counter { position: absolute; bottom: 12px; right: 12px; background: rgba(0,0,0,0.7); color: #fff; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; z-index: 5; }
 
         .hotel-info { padding: 18px; }
@@ -175,11 +184,14 @@ app.get('*', (req, res) => {
         .badges-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
         .badge { background: #f0fdf4; color: #16a34a; font-size: 10px; font-weight: 800; padding: 4px 8px; border-radius: 6px; border: 1px solid #bbf7d0; }
 
-        .room-select-box { background: #f8fafc; padding: 12px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 14px; position: relative; z-index: 10; }
-        .room-select-box label { font-size: 11px; font-weight: 800; color: #475569; display: block; margin-bottom: 6px; text-transform: uppercase; }
-        .room-select-box select { width: 100%; padding: 10px; border-radius: 8px; border: 1.5px solid #cbd5e1; font-weight: 700; font-size: 14px; background: #fff; color: #0f172a; outline: none; cursor: pointer; }
+        .selector-box { background: #f8fafc; padding: 10px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 10px; position: relative; z-index: 10; }
+        .selector-box label { font-size: 10px; font-weight: 800; color: #475569; display: block; margin-bottom: 4px; text-transform: uppercase; }
+        .selector-box select { width: 100%; padding: 8px; border-radius: 8px; border: 1.5px solid #cbd5e1; font-weight: 700; font-size: 13px; background: #fff; color: #0f172a; outline: none; cursor: pointer; }
 
-        .wa-btn { background: #25D366; color: white; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px; border-radius: 12px; text-decoration: none; font-weight: 800; width: 100%; font-size: 15px; box-shadow: 0 4px 12px rgba(37,211,102,0.3); }
+        .action-row { display: flex; gap: 8px; margin-top: 10px; }
+        .wa-btn { background: #25D366; color: white; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 12px; border-radius: 12px; text-decoration: none; font-weight: 800; flex: 2; font-size: 14px; box-shadow: 0 4px 12px rgba(37,211,102,0.3); }
+        .callback-btn { background: #0f172a; color: white; border: none; padding: 12px; border-radius: 12px; font-weight: 800; flex: 1; font-size: 13px; cursor: pointer; }
+        
         .loader { text-align: center; padding: 40px; color: #64748b; font-weight: 600; font-size: 16px; }
       </style>
     </head>
@@ -187,18 +199,34 @@ app.get('*', (req, res) => {
 
       <div class="header">
         <div class="logo">Sheet Hotels</div>
-        <div class="tagline">✨ Best Budget & 3-Star Stays</div>
+        <div class="tagline">✨ Verified Pan-India 3-Star Stays</div>
       </div>
+
+      <div class="promo-ticker">🎉 Use Code SHEET15 on WhatsApp to unlock special 3-Star booking discounts!</div>
 
       <div class="hero-banner">
         <div class="search-container">
-          <div class="search-title">🔍 Find Budget & 3-Star Hotels</div>
+          <div class="search-title">🔍 Find 3-Star Hotels Across India</div>
           <div class="input-grid">
             <div class="input-box full-width" style="position: relative;">
-              <label>Destination City</label>
-              <input type="text" id="cityInput" value="Mumbai" placeholder="Enter city..." autocomplete="off" onkeyup="showSuggestions(this.value)">
+              <label>Enter Any City in India</label>
+              <input type="text" id="cityInput" value="Mumbai" placeholder="e.g. Goa, Varanasi, Delhi..." autocomplete="off" onkeyup="showSuggestions(this.value)">
               <div id="suggestionsBox" class="suggestions-box"></div>
             </div>
+
+            <div class="input-box full-width" style="border:none; background:transparent; padding:0;">
+              <div class="quick-cities">
+                <span class="quick-city-pill" onclick="quickSearch('Mumbai')">Mumbai</span>
+                <span class="quick-city-pill" onclick="quickSearch('Goa')">Goa</span>
+                <span class="quick-city-pill" onclick="quickSearch('Delhi')">Delhi</span>
+                <span class="quick-city-pill" onclick="quickSearch('Varanasi')">Varanasi</span>
+                <span class="quick-city-pill" onclick="quickSearch('Jaipur')">Jaipur</span>
+                <span class="quick-city-pill" onclick="quickSearch('Bangalore')">Bangalore</span>
+                <span class="quick-city-pill" onclick="quickSearch('Manali')">Manali</span>
+                <span class="quick-city-pill" onclick="quickSearch('Udaipur')">Udaipur</span>
+              </div>
+            </div>
+
             <div class="input-box">
               <label>Check-In</label>
               <input type="date" id="checkinInput" value="${defaultDates.checkin}">
@@ -225,22 +253,27 @@ app.get('*', (req, res) => {
               </select>
             </div>
           </div>
-          <button class="search-btn" onclick="searchHotels()">Search Budget Stays</button>
+          <button class="search-btn" onclick="searchHotels()">Search 3-Star Stays</button>
         </div>
       </div>
 
       <div class="container">
-        <div class="results-header" id="resultsHeader">Assorted Budget & 3-Star Hotels</div>
+        <div class="results-header" id="resultsHeader">Pan-India 3-Star Hotels</div>
         <div id="results">
-          <div class="loader">Loading properties across locations...</div>
+          <div class="loader">Loading properties across India...</div>
         </div>
       </div>
 
       <script>
         let cachedHotels = [];
-        const popularCities = ["Mumbai", "Goa", "Delhi", "Bangalore", "Jaipur", "Udaipur", "Manali", "Shimla", "Kolkata", "Varanasi"];
+        const popularCities = ["Mumbai", "Goa", "Delhi", "Bangalore", "Jaipur", "Udaipur", "Manali", "Shimla", "Kolkata", "Varanasi", "Agra", "Pune", "Hyderabad", "Chennai"];
 
         window.onload = function() { searchHotels(); };
+
+        function quickSearch(city) {
+          document.getElementById('cityInput').value = city;
+          searchHotels();
+        }
 
         function showSuggestions(val) {
           const box = document.getElementById('suggestionsBox');
@@ -270,7 +303,7 @@ app.get('*', (req, res) => {
           const resultsHeader = document.getElementById('resultsHeader');
 
           resultsHeader.innerText = "Hotels in " + city;
-          resultsDiv.innerHTML = "<div class='loader'>Fetching 20-30 budget & 3-star stays...</div>";
+          resultsDiv.innerHTML = "<div class='loader'>Fetching 3-star verified stays...</div>";
 
           try {
             const queryUrl = \`/api/hotels?city=\${encodeURIComponent(city)}\`;
@@ -284,11 +317,11 @@ app.get('*', (req, res) => {
 
             cachedHotels = data.hotels || [];
             if (cachedHotels.length === 0) {
-              resultsDiv.innerHTML = "<p style='color:#64748b; text-align:center;'>No hotels found.</p>";
+              resultsDiv.innerHTML = "<p style='color:#64748b; text-align:center;'>No 3-star hotels found for this location.</p>";
               return;
             }
 
-            resultsHeader.innerText = \`Top Budget Stays in \${city} (\${cachedHotels.length} Properties)\`;
+            resultsHeader.innerText = \`Top 3-Star Stays in \${city} (\${cachedHotels.length} Properties)\`;
             renderHotels();
 
           } catch (err) {
@@ -310,6 +343,11 @@ app.get('*', (req, res) => {
               roomOptionsHtml += \`<option value="\${room.type}">\${room.type}</option>\`;
             });
 
+            let mealOptionsHtml = "";
+            hotel.mealsData.forEach(meal => {
+              mealOptionsHtml += \`<option value="\${meal.type}">\${meal.type}</option>\`;
+            });
+
             let imagesHtml = "";
             hotel.photos.forEach(photo => {
               imagesHtml += \`<img src="\${photo}" class="slider-img" alt="\${hotel.name}" loading="lazy">\`;
@@ -318,6 +356,7 @@ app.get('*', (req, res) => {
             html += \`
               <div class="hotel-card">
                 <div class="slider-container" id="slider_\${idx}">
+                  <div class="star-tag">⭐ 3-Star Hotel</div>
                   <div class="rating-badge">\${hotel.rating}</div>
                   <div class="slider-track" id="track_\${idx}" style="transform: translateX(0%);">
                     \${imagesHtml}
@@ -334,19 +373,31 @@ app.get('*', (req, res) => {
                   <div class="badges-row">
                     <span class="badge">🟢 Free Cancellation</span>
                     <span class="badge">🟢 Pay at Hotel</span>
-                    <span class="badge">🟢 Breakfast Included</span>
+                    <span class="badge">🟢 GST Invoice Available</span>
                   </div>
 
-                  <div class="room-select-box">
+                  <div class="selector-box">
                     <label>Select Room Category</label>
                     <select id="roomSelect_\${idx}">
                       \${roomOptionsHtml}
                     </select>
                   </div>
 
-                  <button class="wa-btn" onclick="bookViaWhatsApp(\${idx})">
-                    <span>📱 Book Now via WhatsApp</span>
-                  </button>
+                  <div class="selector-box">
+                    <label>Select Meal Plan</label>
+                    <select id="mealSelect_\${idx}">
+                      \${mealOptionsHtml}
+                    </select>
+                  </div>
+
+                  <div class="action-row">
+                    <button class="wa-btn" onclick="bookViaWhatsApp(\${idx})">
+                      <span>📱 Book via WhatsApp</span>
+                    </button>
+                    <button class="callback-btn" onclick="requestCallback(\${idx})">
+                      📞 Call Back
+                    </button>
+                  </div>
                 </div>
               </div>
             \`;
@@ -374,8 +425,8 @@ app.get('*', (req, res) => {
 
         function bookViaWhatsApp(idx) {
           const hotel = cachedHotels[idx];
-          const selectElement = document.getElementById('roomSelect_' + idx);
-          const selectedRoom = selectElement.value;
+          const selectedRoom = document.getElementById('roomSelect_' + idx).value;
+          const selectedMeal = document.getElementById('mealSelect_' + idx).value;
           
           const city = document.getElementById('cityInput').value;
           const checkin = document.getElementById('checkinInput').value;
@@ -384,13 +435,29 @@ app.get('*', (req, res) => {
           const roomsCount = document.getElementById('roomsInput').value;
 
           const msg = encodeURIComponent(
-            "Hi Sheet Hotels, I want to book this budget/3-star stay:\\n\\n" + 
+            "Hi Sheet Hotels, I want to book this 3-star stay:\\n\\n" + 
             "🏨 Hotel: " + hotel.name + "\\n" +
             "🛏️ Room Type: " + selectedRoom + "\\n" +
+            "🍽️ Meal Plan: " + selectedMeal + "\\n" +
             "📍 Location: " + hotel.location + "\\n" +
             "📅 Check-in: " + checkin + "\\n" +
             "📅 Check-out: " + checkout + "\\n" +
             "👥 Guests: " + adults + " Adults, " + roomsCount + " Room(s)"
+          );
+
+          window.open("https://wa.me/917388442233?text=" + msg, "_blank");
+        }
+
+        function requestCallback(idx) {
+          const hotel = cachedHotels[idx];
+          const userPhone = prompt("Please enter your mobile number for instant callback:");
+          if (!userPhone) return;
+
+          const msg = encodeURIComponent(
+            "Hi Sheet Hotels, I need an urgent callback for booking assistance:\\n\\n" +
+            "📞 Customer Phone: " + userPhone + "\\n" +
+            "🏨 Interested Hotel: " + hotel.name + "\\n" +
+            "📍 Location: " + hotel.location
           );
 
           window.open("https://wa.me/917388442233?text=" + msg, "_blank");

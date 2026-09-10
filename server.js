@@ -8,18 +8,14 @@ app.use(cors());
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || "hotels-com-provider.p.rapidapi.com";
 
-// 1. Hotel Search API Endpoint
 app.get('/api/hotels', async (req, res) => {
   try {
     const { city, checkin, checkout } = req.query;
     if (!city) return res.status(400).json({ error: "City name is required" });
 
-    const defaultCheckin = checkin || "2026-10-01";
-    const defaultCheckout = checkout || "2026-10-05";
-
-    // Step A: Fetch Region ID
+    // Step A: Region Search
     const regionRes = await axios.get(`https://${RAPIDAPI_HOST}/v2/regions`, {
-      params: { query: city, locale: 'en_IN', domain: 'IN' },
+      params: { query: city, locale: 'en_US', domain: 'US' },
       headers: {
         'x-rapidapi-key': RAPIDAPI_KEY,
         'x-rapidapi-host': RAPIDAPI_HOST
@@ -27,20 +23,25 @@ app.get('/api/hotels', async (req, res) => {
     });
 
     const regions = regionRes.data?.data || [];
-    const cityRegion = regions.find(r => r.type === 'CITY' || r.type === 'NEIGHBORHOOD') || regions[0];
-
-    if (!cityRegion?.gaiaId) {
-      return res.status(404).json({ error: "City region not found" });
+    if (regions.length === 0) {
+      return res.status(404).json({ error: "City not found" });
     }
 
-    // Step B: Search Hotels
+    // Pick first gaiaId available from response
+    const gaiaId = regions[0].gaiaId || regions[0].id;
+
+    if (!gaiaId) {
+      return res.status(404).json({ error: "Gaia ID missing for city" });
+    }
+
+    // Step B: Hotels Search (Standardized parameters)
     const hotelRes = await axios.get(`https://${RAPIDAPI_HOST}/v2/hotels/search`, {
       params: {
-        region_id: cityRegion.gaiaId,
-        locale: 'en_IN',
-        domain: 'IN',
-        checkin_date: defaultCheckin,
-        checkout_date: defaultCheckout,
+        region_id: gaiaId,
+        locale: 'en_US',
+        domain: 'US',
+        checkin_date: checkin || '2026-10-01',
+        checkout_date: checkout || '2026-10-05',
         sort_order: 'RECOMMENDED',
         adults_number: '2',
         currency: 'INR',
@@ -55,12 +56,12 @@ app.get('/api/hotels', async (req, res) => {
     res.json(hotelRes.data);
 
   } catch (err) {
-    console.error("API Error:", err.message);
-    res.status(500).json({ error: "API Request Failed", details: err.message });
+    console.error("API Error Details:", err.response?.data || err.message);
+    res.status(500).json({ error: "API Search Failed", details: err.message });
   }
 });
 
-// 2. Direct Inline HTML UI Rendering (No external index.html required)
+// UI Code
 app.get('*', (req, res) => {
   res.send(`
     <!DOCTYPE html>
@@ -75,9 +76,8 @@ app.get('*', (req, res) => {
         input, button { padding: 12px; margin: 5px; border-radius: 5px; border: 1px solid #ccc; font-size: 16px; }
         input { width: 60%; }
         button { background-color: #007bff; color: white; cursor: pointer; border: none; font-weight: bold; }
-        button:hover { background-color: #0056b3; }
         .hotel-card { border: 1px solid #ddd; border-radius: 8px; margin-top: 15px; padding: 15px; text-align: left; display: flex; gap: 15px; align-items: center; }
-        .hotel-card img { width: 120px; height: 100px; object-fit: cover; border-radius: 5px; }
+        .hotel-card img { width: 130px; height: 100px; object-fit: cover; border-radius: 5px; }
         .hotel-info { flex-grow: 1; }
         .wa-btn { background-color: #25D366; color: white; padding: 8px 12px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; margin-top: 5px; }
       </style>
@@ -98,28 +98,30 @@ app.get('*', (req, res) => {
           const resultsDiv = document.getElementById('results');
           if (!city) return alert("Please enter a city name");
 
-          resultsDiv.innerHTML = "<p>Searching best deals for " + city + "...</p>";
+          resultsDiv.innerHTML = "<p>Searching hotels in " + city + "...</p>";
 
           try {
             const res = await fetch('/api/hotels?city=' + encodeURIComponent(city));
             const data = await res.json();
 
             if (data.error) {
-              resultsDiv.innerHTML = "<p style='color:red;'>Error: " + data.error + "</p>";
+              resultsDiv.innerHTML = "<p style='color:red;'><b>Error:</b> " + data.error + "</p>";
               return;
             }
 
-            const properties = data.properties || data.data?.properties || [];
+            // Extract hotel properties safely across API response variants
+            const properties = data.properties || data.data?.propertySearch?.properties || data.data?.properties || [];
+            
             if (properties.length === 0) {
-              resultsDiv.innerHTML = "<p>No hotels found for " + city + "</p>";
+              resultsDiv.innerHTML = "<p>No hotels found for " + city + ". Try searching another city like 'Delhi' or 'Mumbai'.</p>";
               return;
             }
 
             let html = "";
             properties.slice(0, 10).forEach(hotel => {
               const name = hotel.name || "Luxury Stay";
-              const price = hotel.price?.lead?.formatted || "Check Rate";
-              const img = hotel.propertyImage?.image?.url || "https://via.placeholder.com/150";
+              const price = hotel.price?.lead?.formatted || hotel.price?.options?.[0]?.strikeThrough?.formatted || "Check Rate";
+              const img = hotel.propertyImage?.image?.url || "https://images.pexels.com/photos/258154/pexels-photo-258154.jpeg";
               const waText = encodeURIComponent("Hi Sheet Holidays, I want to book " + name + " in " + city + " for " + price);
               const waLink = "https://wa.me/919999999999?text=" + waText;
 

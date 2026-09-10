@@ -1,349 +1,1851 @@
-require("dotenv").config();
-
-const express = require("express");
-const axios = require("axios");
-const cors = require("cors");
+const express = require('express');
+const axios = require('axios');
+const cors = require('cors');
 
 const app = express();
 
 app.use(cors());
 app.use(express.json());
 
-const PORT = process.env.PORT || 10000;
-
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
-const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || "hotels-com-provider.p.rapidapi.com";
+const RAPIDAPI_HOST =
+  process.env.RAPIDAPI_HOST || "hotels-com-provider.p.rapidapi.com";
 
-const API_BASE = `https://${RAPIDAPI_HOST}`;
+const PORT = process.env.PORT || 3000;
 
-// ----------------------------------------------------
-// DATES HELPER
-// ----------------------------------------------------
-function defaultDates() {
-  const now = new Date();
-  const checkin = new Date(now);
-  checkin.setDate(checkin.getDate() + 1);
 
-  const checkout = new Date(now);
-  checkout.setDate(checkout.getDate() + 3);
+// ============================================================
+// DEFAULT DATES
+// ============================================================
 
-  const format = d => {
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
+function getDefaultDates() {
+  const today = new Date();
+
+  const checkin = new Date(today);
+  checkin.setDate(today.getDate() + 1);
+
+  const checkout = new Date(today);
+  checkout.setDate(today.getDate() + 3);
+
+  return {
+    checkin: checkin.toISOString().split("T")[0],
+    checkout: checkout.toISOString().split("T")[0]
   };
-
-  return { checkin: format(checkin), checkout: format(checkout) };
 }
 
-// ----------------------------------------------------
-// REGION FINDER (HOTELS.COM)
-// ----------------------------------------------------
-async function findRegion(city) {
-  const response = await axios.get(`${API_BASE}/v2/regions`, {
-    params: { query: city, locale: "en_US", domain: "US" },
-    headers: {
-      "x-rapidapi-key": RAPIDAPI_KEY,
-      "x-rapidapi-host": RAPIDAPI_HOST
-    },
-    timeout: 20000
-  });
 
-  const regions = response.data?.data || [];
-  if (!regions.length) {
-    throw new Error(`City '${city}' not found.`);
-  }
+// ============================================================
+// RAPIDAPI HEADERS
+// ============================================================
 
-  // Find CITY or NEIGHBORHOOD or pick the first item
-  const selected = regions.find(r => r.type === "CITY" || r.type === "NEIGHBORHOOD") || regions[0];
-  const gaiaId = selected.gaiaId || selected.id;
-
-  if (!gaiaId) {
-    throw new Error(`Region ID not found for '${city}'.`);
-  }
-
-  return { gaiaId, name: selected.regionNames?.displayName || city };
+function getHeaders() {
+  return {
+    "x-rapidapi-key": RAPIDAPI_KEY,
+    "x-rapidapi-host": RAPIDAPI_HOST
+  };
 }
 
-// ----------------------------------------------------
-// PARSERS
-// ----------------------------------------------------
-function parsePrice(hotel) {
-  try {
-    const p1 = hotel.price?.lead?.formatted;
-    if (p1) return { amount: p1 };
 
-    const p2 = hotel.price?.options?.[0]?.formattedDisplayPrice;
-    if (p2) return { amount: p2 };
+// ============================================================
+// GET HOTEL PROPERTIES FROM DIFFERENT RESPONSE FORMATS
+// ============================================================
 
-    const numVal = hotel.price?.lead?.amount || hotel.price?.raw?.value;
-    if (numVal && !isNaN(numVal)) {
-      return { amount: "₹" + Math.round(Number(numVal)).toLocaleString("en-IN") };
-    }
-  } catch (e) {}
-  return { amount: "Price on Request" };
+function getProperties(data) {
+  return (
+    data?.searchResults?.results ||
+    data?.data?.searchResults?.results ||
+    data?.properties ||
+    data?.data?.propertySearch?.properties ||
+    data?.data?.properties ||
+    data?.data?.results ||
+    []
+  );
 }
+
+
+// ============================================================
+// REAL HOTEL IMAGE PARSER
+// ============================================================
 
 function parseImage(hotel) {
-  try {
-    let rawUrl = "";
-    if (Array.isArray(hotel.cardPhotos) && hotel.cardPhotos.length > 0) {
-      rawUrl = hotel.cardPhotos[0]?.image?.url || hotel.cardPhotos[0]?.url || "";
+  const possibleImages = [
+    // Hotels.com Provider - MAIN REAL IMAGE
+    hotel?.optimizedThumbUrls?.srpDesktop,
+    hotel?.optimizedThumbUrls?.srpMobile,
+    hotel?.optimizedThumbUrls?.srpTablet,
+
+    // Other possible formats
+    hotel?.propertyImage?.image?.url,
+    hotel?.propertyImage?.url,
+    hotel?.propertyImage?.fallbackUrl,
+
+    hotel?.cardPhotos?.[0]?.image?.url,
+    hotel?.cardPhotos?.[0]?.url,
+
+    hotel?.propertyImages?.[0]?.image?.url,
+    hotel?.propertyImages?.[0]?.url,
+
+    hotel?.mapMarker?.propertyImage?.url,
+
+    hotel?.summary?.propertyImage?.image?.url,
+    hotel?.summary?.propertyImage?.url
+  ];
+
+  for (let url of possibleImages) {
+    if (typeof url !== "string") continue;
+
+    url = url.trim();
+
+    if (url.length < 10) continue;
+
+    // Protocol-relative URL
+    if (url.startsWith("//")) {
+      url = "https:" + url;
     }
-    if (!rawUrl && Array.isArray(hotel.propertyImages) && hotel.propertyImages.length > 0) {
-      rawUrl = hotel.propertyImages[0]?.image?.url || hotel.propertyImages[0]?.url || "";
+
+    // Some APIs return {size}
+    url = url.replace(/\{size\}/gi, "z");
+
+    if (url.startsWith("http://") || url.startsWith("https://")) {
+      return url;
     }
-    if (!rawUrl) {
-      rawUrl = hotel.propertyImage?.image?.url || hotel.propertyImage?.url || "";
-    }
-    if (rawUrl) {
-      rawUrl = rawUrl.replace("{size}", "z");
-      if (rawUrl.startsWith("//")) rawUrl = "https:" + rawUrl;
-      return rawUrl;
-    }
-  } catch (e) {}
-  return null;
+  }
+
+  // No fake Unsplash image.
+  return "";
 }
 
-// ----------------------------------------------------
-// SEARCH ENDPOINT
-// ----------------------------------------------------
-app.get("/api/hotels", async (req, res) => {
+
+// ============================================================
+// PRICE PARSER
+// ============================================================
+
+function parsePrice(hotel) {
   try {
-    if (!RAPIDAPI_KEY) {
-      return res.status(500).json({ status: false, error: "RAPIDAPI_KEY missing on Render environment variables" });
+    const candidates = [
+
+      // Hotels.com common pricing formats
+      hotel?.price?.displayMessages?.[0]?.lineItems?.[0]?.price?.formatted,
+
+      hotel?.price?.options?.[0]?.formattedDisplayPrice,
+
+      hotel?.price?.options?.[0]?.formatted,
+
+      hotel?.price?.lead?.formatted,
+
+      hotel?.price?.formatted,
+
+      hotel?.price?.formattedCurrent,
+
+      hotel?.price?.currentPrice?.formatted,
+
+      hotel?.price?.totalPrice?.formatted,
+
+      hotel?.ratePlan?.price?.formatted,
+
+      hotel?.ratePlan?.price?.current?.formatted,
+
+      hotel?.pricing?.formatted,
+
+      hotel?.pricing?.total?.formatted,
+
+      hotel?.pricing?.totalPrice?.formatted,
+
+      hotel?.pricing?.currentPrice?.formatted,
+
+      hotel?.price?.displayPrice,
+
+      hotel?.price?.current
+    ];
+
+    for (const value of candidates) {
+      if (
+        value !== undefined &&
+        value !== null &&
+        String(value).trim() !== ""
+      ) {
+        return String(value);
+      }
     }
 
-    let { city, checkin, checkout, adults, rooms } = req.query;
-    city = city || "Mumbai";
-    const dates = defaultDates();
+    // Numeric fallback
+    const rawValues = [
+      hotel?.price?.lead?.amount,
+      hotel?.price?.raw?.value,
+      hotel?.price?.amount,
+      hotel?.pricing?.amount,
+      hotel?.pricing?.total?.amount,
+      hotel?.pricing?.totalPrice?.amount
+    ];
 
-    checkin = checkin || dates.checkin;
-    checkout = checkout || dates.checkout;
+    for (const raw of rawValues) {
+      const num = Number(raw);
+
+      if (Number.isFinite(num) && num > 0) {
+        return "₹" + Math.round(num).toLocaleString("en-IN");
+      }
+    }
+
+  } catch (e) {
+    console.log("PRICE PARSE ERROR:", e.message);
+  }
+
+  return "Rates on Request";
+}
+
+
+// ============================================================
+// CITY / REGION FINDER
+// ============================================================
+
+async function findCityRegion(city) {
+
+  const regionRes = await axios.get(
+    `https://${RAPIDAPI_HOST}/v2/regions`,
+    {
+      params: {
+        query: city,
+        locale: "en_IN",
+        domain: "IN"
+      },
+      headers: getHeaders(),
+      timeout: 30000
+    }
+  );
+
+  const regions = regionRes.data?.data || [];
+
+  if (!regions.length) {
+    return null;
+  }
+
+  const cityRegion =
+    regions.find(
+      r =>
+        r.type === "CITY" ||
+        r.type === "NEIGHBORHOOD"
+    ) || regions[0];
+
+  return cityRegion.gaiaId || cityRegion.id || null;
+}
+
+
+// ============================================================
+// HOTEL SEARCH
+// ============================================================
+
+async function searchHotelsAPI({
+  gaiaId,
+  checkin,
+  checkout,
+  adults,
+  rooms
+}) {
+
+  const hotelRes = await axios.get(
+    `https://${RAPIDAPI_HOST}/v3/hotels/search`,
+    {
+      params: {
+        region_id: gaiaId,
+
+        locale: "en_IN",
+        domain: "IN",
+
+        checkin_date: checkin,
+        checkout_date: checkout,
+
+        sort_order: "RECOMMENDED",
+
+        adults_number: adults,
+        rooms_number: rooms,
+
+        currency: "INR",
+
+        page_number: "1"
+      },
+
+      headers: getHeaders(),
+
+      timeout: 45000
+    }
+  );
+
+  return hotelRes.data;
+}
+
+
+// ============================================================
+// 1. SEARCH API ENDPOINT
+// ============================================================
+
+app.get("/api/hotels", async (req, res) => {
+
+  try {
+
+    let {
+      city,
+      checkin,
+      checkout,
+      adults,
+      rooms
+    } = req.query;
+
+    city = city || "Goa";
+
+    const defaultDates = getDefaultDates();
+
+    checkin = checkin || defaultDates.checkin;
+    checkout = checkout || defaultDates.checkout;
+
     adults = adults || "2";
     rooms = rooms || "1";
 
-    const { gaiaId, name: cityName } = await findRegion(city);
 
-    const response = await axios.get(`${API_BASE}/v3/hotels/search`, {
-      params: {
-        region_id: gaiaId,
-        locale: "en_US",
-        domain: "US",
-        checkin_date: checkin,
-        checkout_date: checkout,
-        sort_order: "RECOMMENDED",
-        adults_number: adults,
-        rooms_number: rooms,
-        currency: "INR",
-        page_number: "1"
-      },
-      headers: {
-        "x-rapidapi-key": RAPIDAPI_KEY,
-        "x-rapidapi-host": RAPIDAPI_HOST
-      },
-      timeout: 30000
+    if (!RAPIDAPI_KEY) {
+
+      return res.status(500).json({
+        error: "RAPIDAPI_KEY missing on server"
+      });
+
+    }
+
+
+    console.log(
+      `Searching hotels: ${city} | ${checkin} -> ${checkout} | Adults: ${adults} | Rooms: ${rooms}`
+    );
+
+
+    // Find city
+    const gaiaId = await findCityRegion(city);
+
+
+    if (!gaiaId) {
+
+      return res.status(404).json({
+        error: "City region not found"
+      });
+
+    }
+
+
+    console.log("GAIA ID:", gaiaId);
+
+
+    // Search hotels
+    const hotelData = await searchHotelsAPI({
+      gaiaId,
+      checkin,
+      checkout,
+      adults,
+      rooms
     });
 
-    const properties =
-      response.data?.properties ||
-      response.data?.data?.propertySearch?.properties ||
-      [];
 
-    const hotels = properties.slice(0, 15).map(h => ({
-      hotel_id: h.id,
-      name: h.name || "Luxury Stay",
-      rating: h.reviews?.score || h.star || null,
-      image: parseImage(h),
-      price: parsePrice(h)
-    }));
+    const properties = getProperties(hotelData);
 
-    res.json({
-      status: true,
-      destination: { name: cityName, region_id: gaiaId },
-      dates: { checkin, checkout },
-      guests: { adults, rooms },
-      hotels
+
+    console.log("TOTAL HOTELS FOUND:", properties.length);
+
+
+    // Debug first hotel
+    if (properties.length > 0) {
+
+      console.log(
+        "FIRST HOTEL:",
+        properties[0]?.name
+      );
+
+      console.log(
+        "FIRST HOTEL IMAGE:",
+        parseImage(properties[0])
+      );
+
+      console.log(
+        "FIRST HOTEL PRICE:",
+        parsePrice(properties[0])
+      );
+
+    }
+
+
+    res.json(hotelData);
+
+
+  } catch (err) {
+
+    const errData =
+      err.response?.data ||
+      err.message;
+
+    console.error(
+      "API SEARCH ERROR:",
+      JSON.stringify(errData, null, 2)
+    );
+
+
+    res.status(
+      err.response?.status || 500
+    ).json({
+      error: "API Search Failed",
+      details: errData
     });
 
-  } catch (error) {
-    const errorDetails = error.response?.data || error.message;
-    res.status(500).json({
-      status: false,
-      error: typeof errorDetails === "object" ? JSON.stringify(errorDetails) : errorDetails
-    });
   }
+
 });
 
-// ----------------------------------------------------
-// FRONTEND UI
-// ----------------------------------------------------
-app.get("*", (req, res) => {
-  const dates = defaultDates();
-  res.send(`
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Sheet Holidays - Hotels</title>
-<style>
-* { box-sizing: border-box; }
-body { margin: 0; font-family: Arial, sans-serif; background: #07111f; color: white; }
-.header { background: #ffffff; height: 70px; display: flex; align-items: center; justify-content: space-between; padding: 0 20px; position: sticky; top: 0; z-index: 100; }
-.logo { color: #111827; font-size: 20px; font-weight: 800; }
-.container { max-width: 700px; margin: auto; padding: 15px; }
-.search { background: #111d30; border: 1px solid #26364d; padding: 16px; border-radius: 18px; margin-bottom: 22px; }
-label { font-size: 11px; color: #94a3b8; font-weight: bold; display: block; margin-bottom: 6px; }
-input, select { width: 100%; border: 1px solid #334155; background: #07111f; color: white; padding: 13px; border-radius: 10px; font-size: 14px; outline: none; }
-.field { margin-bottom: 12px; }
-.row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-.searchBtn { width: 100%; border: 0; padding: 14px; border-radius: 30px; background: #16a34a; color: white; font-size: 17px; font-weight: 800; margin-top: 5px; cursor: pointer; }
-.title { font-size: 20px; font-weight: 800; margin: 20px 0 14px; }
-.hotel { background: #111d30; border: 1px solid #26364d; border-radius: 18px; overflow: hidden; margin-bottom: 20px; }
-.hotelImage { width: 100%; height: 230px; object-fit: cover; display: block; background: #172235; }
-.hotelBody { padding: 15px; }
-.hotelName { font-size: 19px; font-weight: 800; margin-bottom: 7px; }
-.rating { color: #fbbf24; font-size: 14px; margin-bottom: 8px; }
-.price { color: #34d399; font-size: 23px; font-weight: 900; margin: 10px 0; }
-.price small { color: #94a3b8; font-size: 12px; font-weight: normal; }
-.book { display: block; text-decoration: none; text-align: center; background: #16a34a; color: white; padding: 13px; border-radius: 10px; font-size: 16px; font-weight: 800; }
-.loading { text-align: center; color: #94a3b8; padding: 30px; }
-.error { background: #3f1620; border: 1px solid #7f1d1d; padding: 15px; border-radius: 12px; color: #fecaca; }
-.noImage { height: 230px; display: flex; align-items: center; justify-content: center; background: #172235; color: #64748b; font-size: 14px; }
-</style>
-</head>
-<body>
-<div class="header">
-  <div class="logo">SHEET HOLIDAYS</div>
-</div>
-<div class="container">
-  <div class="search">
-    <div class="field">
-      <label>DESTINATION</label>
-      <input id="city" value="Mumbai" placeholder="Mumbai, Goa, Delhi...">
-    </div>
-    <div class="row">
-      <div class="field">
-        <label>CHECK-IN</label>
-        <input id="checkin" type="date" value="${dates.checkin}">
-      </div>
-      <div class="field">
-        <label>CHECK-OUT</label>
-        <input id="checkout" type="date" value="${dates.checkout}">
-      </div>
-    </div>
-    <div class="row">
-      <div class="field">
-        <label>ADULTS</label>
-        <select id="adults">
-          <option value="1">1 Adult</option>
-          <option value="2" selected>2 Adults</option>
-          <option value="3">3 Adults</option>
-          <option value="4">4 Adults</option>
-        </select>
-      </div>
-      <div class="field">
-        <label>ROOMS</label>
-        <select id="rooms">
-          <option value="1" selected>1 Room</option>
-          <option value="2">2 Rooms</option>
-          <option value="3">3 Rooms</option>
-        </select>
-      </div>
-    </div>
-    <button class="searchBtn" onclick="searchHotels()">🔍 Search Hotels</button>
-  </div>
-  <div class="title" id="title">Popular Hotels</div>
-  <div id="results"><div class="loading">Loading hotels...</div></div>
-</div>
-<script>
-function escapeHtml(text) {
-  if (!text) return "";
-  return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
 
-function createCard(hotel) {
-  const name = escapeHtml(hotel.name || "Hotel");
-  const rating = hotel.rating ? "⭐ " + hotel.rating : "";
-  const price = hotel.price?.amount || "Rates on Request";
-  const image = hotel.image;
+// ============================================================
+// 2. FEATURED HOTELS
+// ============================================================
 
-  const city = document.getElementById("city").value;
-  const checkin = document.getElementById("checkin").value;
-  const checkout = document.getElementById("checkout").value;
-  const adults = document.getElementById("adults").value;
-  const rooms = document.getElementById("rooms").value;
-
-  const message = encodeURIComponent("Hi Sheet Holidays!\\n\\nI want to book:\\n" + name + "\\n\\nDestination: " + city + "\\nCheck-in: " + checkin + "\\nCheck-out: " + checkout + "\\nAdults: " + adults + "\\nRooms: " + rooms + "\\n\\nPrice: " + price);
-  const whatsapp = "https://wa.me/917388442233?text=" + message;
-
-  const photoHtml = image 
-    ? \`<img class="hotelImage" src="\${image}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='flex';"><div class="noImage" style="display:none">Hotel photo unavailable</div>\`
-    : \`<div class="noImage">Hotel photo unavailable</div>\`;
-
-  return \`
-    <div class="hotel">
-      \${photoHtml}
-      <div class="hotelBody">
-        <div class="hotelName">\${name}</div>
-        <div class="rating">\${rating}</div>
-        <div class="price">\${price} <small>/ selected stay</small></div>
-        <a class="book" href="\${whatsapp}" target="_blank">💬 Book on WhatsApp</a>
-      </div>
-    </div>
-  \`;
-}
-
-async function searchHotels() {
-  const city = document.getElementById("city").value.trim();
-  const checkin = document.getElementById("checkin").value;
-  const checkout = document.getElementById("checkout").value;
-  const adults = document.getElementById("adults").value;
-  const rooms = document.getElementById("rooms").value;
-
-  const results = document.getElementById("results");
-  const title = document.getElementById("title");
-
-  if (!city || !checkin || !checkout) {
-    alert("City aur Dates select karein");
-    return;
-  }
-
-  title.innerText = "Searching hotels in " + city + "...";
-  results.innerHTML = \`<div class="loading">🔄 Finding live hotels & prices...</div>\`;
+app.get("/api/featured-hotels", async (req, res) => {
 
   try {
-    let url = \`/api/hotels?city=\${encodeURIComponent(city)}&checkin=\${checkin}&checkout=\${checkout}&adults=\${adults}&rooms=\${rooms}\`;
-    const response = await fetch(url);
-    const data = await response.json();
 
-    if (!response.ok || !data.status) {
-      throw new Error(data.error || "Hotels Search Error");
+    if (!RAPIDAPI_KEY) {
+
+      return res.status(500).json({
+        error: "RAPIDAPI_KEY missing on server"
+      });
+
     }
 
-    const hotels = data.hotels || [];
-    title.innerText = "Hotels in " + (data.destination?.name || city);
 
-    if (!hotels.length) {
-      results.innerHTML = \`<div class="error">Is destination ke liye hotels nahi mile.</div>\`;
-      return;
+    const defaultDates = getDefaultDates();
+
+    const cities = [
+      "Goa",
+      "Mumbai",
+      "Delhi",
+      "Jaipur"
+    ];
+
+    let allHotels = [];
+
+
+    for (const city of cities) {
+
+      if (allHotels.length >= 20) {
+        break;
+      }
+
+
+      try {
+
+        console.log(
+          "Loading featured city:",
+          city
+        );
+
+
+        const gaiaId =
+          await findCityRegion(city);
+
+
+        if (!gaiaId) {
+          console.log(
+            "No region found:",
+            city
+          );
+          continue;
+        }
+
+
+        const hotelData =
+          await searchHotelsAPI({
+
+            gaiaId,
+
+            checkin:
+              defaultDates.checkin,
+
+            checkout:
+              defaultDates.checkout,
+
+            adults: "2",
+
+            rooms: "1"
+
+          });
+
+
+        const props =
+          getProperties(hotelData);
+
+
+        console.log(
+          `${city}: ${props.length} hotels`
+        );
+
+
+        const taggedProps =
+          props.map(hotel => ({
+
+            ...hotel,
+
+            cityName: city
+
+          }));
+
+
+        allHotels =
+          allHotels.concat(taggedProps);
+
+
+      } catch (e) {
+
+        console.log(
+          `Skipped ${city}:`,
+          e.response?.data ||
+          e.message
+        );
+
+      }
+
     }
 
-    results.innerHTML = hotels.map(createCard).join("");
-  } catch (error) {
-    results.innerHTML = \`<div class="error"><b>Hotel search failed</b><br><br>\${escapeHtml(error.message)}</div>\`;
+
+    const finalHotels =
+      allHotels.slice(0, 20);
+
+
+    console.log(
+      "TOTAL FEATURED:",
+      finalHotels.length
+    );
+
+
+    res.json({
+      properties: finalHotels
+    });
+
+
+  } catch (err) {
+
+    console.error(
+      "FEATURED ERROR:",
+      err.message
+    );
+
+
+    res.status(500).json({
+      error:
+        "Failed to fetch featured hotels"
+    });
+
   }
+
+});
+
+
+// ============================================================
+// 3. FRONTEND
+// ============================================================
+
+app.get("*", (req, res) => {
+
+  const dates = getDefaultDates();
+
+
+  res.send(`
+
+<!DOCTYPE html>
+
+<html lang="en">
+
+<head>
+
+<meta charset="UTF-8">
+
+<meta
+  name="viewport"
+  content="width=device-width, initial-scale=1.0"
+>
+
+<title>
+Sheet Holidays - Book Best Hotels & Resorts Online
+</title>
+
+<meta
+  name="description"
+  content="Book Hotels, Resorts and Budget Stays with Sheet Holidays."
+>
+
+<style>
+
+* {
+  box-sizing: border-box;
 }
 
-window.addEventListener("load", searchHotels);
+body {
+
+  font-family:
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+
+  background: #0f172a;
+
+  margin: 0;
+
+  padding: 0;
+
+  color: #f8fafc;
+
+}
+
+
+/* NAVBAR */
+
+.navbar {
+
+  background: #1e293b;
+
+  padding: 15px 20px;
+
+  display: flex;
+
+  justify-content: space-between;
+
+  align-items: center;
+
+  border-bottom:
+    1px solid #334155;
+
+}
+
+.logo {
+
+  font-size: 20px;
+
+  font-weight: 800;
+
+  color: #38bdf8;
+
+  text-decoration: none;
+
+}
+
+
+/* CONTAINER */
+
+.container {
+
+  max-width: 600px;
+
+  margin: 15px auto;
+
+  padding: 0 12px;
+
+}
+
+
+/* OFFER */
+
+.promo-banner {
+
+  background:
+    linear-gradient(
+      135deg,
+      #f59e0b,
+      #d97706
+    );
+
+  color: #000;
+
+  padding: 12px 15px;
+
+  border-radius: 12px;
+
+  margin-bottom: 15px;
+
+  font-weight: bold;
+
+  text-align: center;
+
+  font-size: 14px;
+
+}
+
+.promo-code {
+
+  background: #000;
+
+  color: #fff;
+
+  padding: 2px 8px;
+
+  border-radius: 4px;
+
+  font-size: 12px;
+
+}
+
+
+/* SEARCH */
+
+.search-card {
+
+  background: #1e293b;
+
+  border-radius: 16px;
+
+  padding: 16px;
+
+  border:
+    1px solid #334155;
+
+  box-shadow:
+    0 10px 25px
+    rgba(0,0,0,0.5);
+
+}
+
+
+.input-group {
+
+  background: #0f172a;
+
+  border:
+    1px solid #334155;
+
+  border-radius: 10px;
+
+  padding: 8px 12px;
+
+  margin-bottom: 10px;
+
+}
+
+
+.input-group label {
+
+  font-size: 10px;
+
+  font-weight: 800;
+
+  color: #94a3b8;
+
+  display: block;
+
+  text-transform: uppercase;
+
+}
+
+
+.input-group input,
+.input-group select {
+
+  border: none;
+
+  background: transparent;
+
+  font-size: 14px;
+
+  width: 100%;
+
+  outline: none;
+
+  font-weight: 600;
+
+  color: #fff;
+
+}
+
+
+.form-row {
+
+  display: flex;
+
+  gap: 8px;
+
+}
+
+
+.form-row .input-group {
+
+  flex: 1;
+
+}
+
+
+/* BUTTON */
+
+.search-btn {
+
+  background: #2563eb;
+
+  color: white;
+
+  border: none;
+
+  width: 100%;
+
+  padding: 14px;
+
+  border-radius: 25px;
+
+  font-size: 16px;
+
+  font-weight: bold;
+
+  cursor: pointer;
+
+}
+
+
+.search-btn:hover {
+
+  background: #1d4ed8;
+
+}
+
+
+/* TITLE */
+
+.section-title {
+
+  font-size: 18px;
+
+  font-weight: 700;
+
+  margin:
+    25px 0 12px 0;
+
+  color: #38bdf8;
+
+}
+
+
+/* HOTEL */
+
+.hotel-card {
+
+  background: #1e293b;
+
+  border-radius: 14px;
+
+  overflow: hidden;
+
+  margin-bottom: 16px;
+
+  border:
+    1px solid #334155;
+
+}
+
+
+.hotel-img {
+
+  width: 100%;
+
+  height: 210px;
+
+  object-fit: cover;
+
+  background: #334155;
+
+  display: block;
+
+}
+
+
+.no-image {
+
+  width: 100%;
+
+  height: 210px;
+
+  background:
+    linear-gradient(
+      135deg,
+      #1e293b,
+      #334155
+    );
+
+  display: flex;
+
+  align-items: center;
+
+  justify-content: center;
+
+  color: #94a3b8;
+
+  font-size: 45px;
+
+}
+
+
+.hotel-body {
+
+  padding: 14px;
+
+}
+
+
+.hotel-name {
+
+  font-size: 17px;
+
+  font-weight: 700;
+
+  color: #ffffff;
+
+  margin:
+    0 0 6px 0;
+
+}
+
+
+.location-badge {
+
+  font-size: 12px;
+
+  color: #94a3b8;
+
+  margin-bottom: 8px;
+
+}
+
+
+.hotel-price {
+
+  font-size: 20px;
+
+  font-weight: 800;
+
+  color: #34d399;
+
+  margin: 6px 0;
+
+}
+
+
+/* WHATSAPP */
+
+.wa-btn {
+
+  background: #22c55e;
+
+  color: white;
+
+  display: block;
+
+  text-align: center;
+
+  padding: 11px;
+
+  border-radius: 8px;
+
+  text-decoration: none;
+
+  font-weight: bold;
+
+  margin-top: 10px;
+
+  font-size: 15px;
+
+}
+
+
+.wa-btn:hover {
+
+  background: #16a34a;
+
+}
+
+
+/* MOBILE */
+
+@media(max-width: 480px) {
+
+  .container {
+    padding: 0 10px;
+  }
+
+  .hotel-img,
+  .no-image {
+    height: 200px;
+  }
+
+}
+
+</style>
+
+</head>
+
+
+<body>
+
+
+<div class="navbar">
+
+  <a href="/" class="logo">
+    🏨 Sheet Holidays
+  </a>
+
+</div>
+
+
+<div class="container">
+
+
+<div class="promo-banner">
+
+🔥 SPECIAL OFFER:
+Get Flat 15% OFF!
+
+Use Code:
+
+<span class="promo-code">
+SHEET10
+</span>
+
+</div>
+
+
+<!-- SEARCH CARD -->
+
+<div class="search-card">
+
+
+<div class="input-group">
+
+<label>
+Where To?
+</label>
+
+<input
+  type="text"
+  id="cityInput"
+  value="Goa"
+  placeholder="Enter City (e.g. Goa, Mumbai)"
+>
+
+</div>
+
+
+<div class="form-row">
+
+
+<div class="input-group">
+
+<label>
+Check-In
+</label>
+
+<input
+  type="date"
+  id="checkinInput"
+  value="${dates.checkin}"
+>
+
+</div>
+
+
+<div class="input-group">
+
+<label>
+Check-Out
+</label>
+
+<input
+  type="date"
+  id="checkoutInput"
+  value="${dates.checkout}"
+>
+
+</div>
+
+
+</div>
+
+
+<div class="form-row">
+
+
+<div class="input-group">
+
+<label>
+Guests
+</label>
+
+<select id="adultsInput">
+
+<option value="1">
+1 Adult
+</option>
+
+<option value="2" selected>
+2 Adults
+</option>
+
+<option value="3">
+3 Adults
+</option>
+
+<option value="4">
+4 Adults
+</option>
+
+</select>
+
+</div>
+
+
+<div class="input-group">
+
+<label>
+Rooms
+</label>
+
+<select id="roomsInput">
+
+<option value="1" selected>
+1 Room
+</option>
+
+<option value="2">
+2 Rooms
+</option>
+
+<option value="3">
+3 Rooms
+</option>
+
+</select>
+
+</div>
+
+
+</div>
+
+
+<button
+  class="search-btn"
+  onclick="searchHotels()"
+>
+
+Search Hotels
+
+</button>
+
+
+</div>
+
+
+<div class="section-title">
+
+<span id="listTitle">
+Top Featured Stays (20 Mix Destinations)
+</span>
+
+</div>
+
+
+<div id="results">
+
+<p
+  style="
+    text-align:center;
+    color:#94a3b8;
+  "
+>
+
+Loading 20 Featured Hotels...
+
+</p>
+
+</div>
+
+
+</div>
+
+
+<script>
+
+
+// ============================================================
+// PRICE PARSER
+// ============================================================
+
+function parsePrice(hotel) {
+
+  try {
+
+    const candidates = [
+
+      hotel?.price?.displayMessages?.[0]
+        ?.lineItems?.[0]
+        ?.price?.formatted,
+
+      hotel?.price?.options?.[0]
+        ?.formattedDisplayPrice,
+
+      hotel?.price?.options?.[0]
+        ?.formatted,
+
+      hotel?.price?.lead?.formatted,
+
+      hotel?.price?.formatted,
+
+      hotel?.price?.formattedCurrent,
+
+      hotel?.price?.currentPrice?.formatted,
+
+      hotel?.price?.totalPrice?.formatted,
+
+      hotel?.ratePlan?.price?.formatted,
+
+      hotel?.ratePlan?.price?.current?.formatted,
+
+      hotel?.pricing?.formatted,
+
+      hotel?.pricing?.total?.formatted,
+
+      hotel?.pricing?.totalPrice?.formatted,
+
+      hotel?.pricing?.currentPrice?.formatted
+
+    ];
+
+
+    for (const value of candidates) {
+
+      if (
+        value !== undefined &&
+        value !== null &&
+        String(value).trim() !== ""
+      ) {
+
+        return String(value);
+
+      }
+
+    }
+
+
+    const rawValues = [
+
+      hotel?.price?.lead?.amount,
+
+      hotel?.price?.raw?.value,
+
+      hotel?.price?.amount,
+
+      hotel?.pricing?.amount,
+
+      hotel?.pricing?.total?.amount,
+
+      hotel?.pricing?.totalPrice?.amount
+
+    ];
+
+
+    for (const raw of rawValues) {
+
+      const num = Number(raw);
+
+      if (
+        Number.isFinite(num) &&
+        num > 0
+      ) {
+
+        return "₹" +
+          Math.round(num)
+            .toLocaleString("en-IN");
+
+      }
+
+    }
+
+
+  } catch(e) {
+
+    console.log(
+      "PRICE ERROR:",
+      e.message
+    );
+
+  }
+
+
+  return "Rates on Request";
+
+}
+
+
+// ============================================================
+// IMAGE PARSER
+// ============================================================
+
+function parseImage(hotel) {
+
+  const images = [
+
+    // REAL HOTELS.COM IMAGE
+    hotel?.optimizedThumbUrls?.srpDesktop,
+
+    hotel?.optimizedThumbUrls?.srpMobile,
+
+    hotel?.optimizedThumbUrls?.srpTablet,
+
+    hotel?.propertyImage?.image?.url,
+
+    hotel?.propertyImage?.url,
+
+    hotel?.propertyImage?.fallbackUrl,
+
+    hotel?.cardPhotos?.[0]?.image?.url,
+
+    hotel?.cardPhotos?.[0]?.url,
+
+    hotel?.propertyImages?.[0]?.image?.url,
+
+    hotel?.propertyImages?.[0]?.url,
+
+    hotel?.mapMarker?.propertyImage?.url,
+
+    hotel?.summary?.propertyImage?.image?.url,
+
+    hotel?.summary?.propertyImage?.url
+
+  ];
+
+
+  for (let url of images) {
+
+    if (typeof url !== "string") {
+      continue;
+    }
+
+
+    url = url.trim();
+
+
+    if (url.length < 10) {
+      continue;
+    }
+
+
+    if (url.startsWith("//")) {
+      url = "https:" + url;
+    }
+
+
+    url =
+      url.replace(
+        /\{size\}/gi,
+        "z"
+      );
+
+
+    if (
+      url.startsWith("https://") ||
+      url.startsWith("http://")
+    ) {
+
+      return url;
+
+    }
+
+  }
+
+
+  return "";
+
+}
+
+
+// ============================================================
+// ESCAPE HTML
+// ============================================================
+
+function escapeHtml(value) {
+
+  return String(value || "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+
+}
+
+
+// ============================================================
+// BUILD HOTEL CARDS
+// ============================================================
+
+function buildHotelCards(
+  properties,
+  defaultCity = ""
+) {
+
+  let html = "";
+
+
+  properties.forEach(hotel => {
+
+    const name =
+      escapeHtml(
+        hotel.name ||
+        "Luxury Stay"
+      );
+
+
+    const price =
+      escapeHtml(
+        parsePrice(hotel)
+      );
+
+
+    const img =
+      parseImage(hotel);
+
+
+    const city =
+      escapeHtml(
+        hotel.cityName ||
+        defaultCity ||
+        "India"
+      );
+
+
+    const checkin =
+      document.getElementById(
+        "checkinInput"
+      ).value;
+
+
+    const checkout =
+      document.getElementById(
+        "checkoutInput"
+      ).value;
+
+
+    const guests =
+      document.getElementById(
+        "adultsInput"
+      ).value;
+
+
+    const rooms =
+      document.getElementById(
+        "roomsInput"
+      ).value;
+
+
+    const cleanName =
+      hotel.name ||
+      "Hotel";
+
+
+    const message =
+      "Hi Sheet Holidays! " +
+      "I want to book " +
+      cleanName +
+      " in " +
+      city +
+      ". Dates: " +
+      checkin +
+      " to " +
+      checkout +
+      " (" +
+      guests +
+      " Guests, " +
+      rooms +
+      " Room). Price: " +
+      parsePrice(hotel);
+
+
+    const msg =
+      encodeURIComponent(
+        message
+      );
+
+
+    const waLink =
+      "https://wa.me/917388442233?text=" +
+      msg;
+
+
+    let imageHTML = "";
+
+
+    if (img) {
+
+      imageHTML = `
+
+        <img
+          src="${img}"
+          class="hotel-img"
+          alt="${name}"
+          loading="lazy"
+          referrerpolicy="no-referrer"
+          onerror="
+            this.onerror=null;
+            this.outerHTML='<div class=&quot;no-image&quot;>🏨</div>';
+          "
+        >
+
+      `;
+
+    } else {
+
+      imageHTML = `
+
+        <div class="no-image">
+          🏨
+        </div>
+
+      `;
+
+    }
+
+
+    html += `
+
+      <div class="hotel-card">
+
+        ${imageHTML}
+
+        <div class="hotel-body">
+
+          <div class="hotel-name">
+            ${name}
+          </div>
+
+          <div class="location-badge">
+            📍 ${city}
+          </div>
+
+          <div class="hotel-price">
+            ${price}
+          </div>
+
+          <a
+            href="${waLink}"
+            target="_blank"
+            rel="noopener"
+            class="wa-btn"
+          >
+            Book on WhatsApp
+          </a>
+
+        </div>
+
+      </div>
+
+    `;
+
+  });
+
+
+  return html;
+
+}
+
+
+// ============================================================
+// LOAD FEATURED HOTELS
+// ============================================================
+
+async function loadFeaturedHotels() {
+
+  const resultsDiv =
+    document.getElementById(
+      "results"
+    );
+
+
+  try {
+
+    const res =
+      await fetch(
+        "/api/featured-hotels"
+      );
+
+
+    const data =
+      await res.json();
+
+
+    const properties =
+      data.properties || [];
+
+
+    if (
+      properties.length > 0
+    ) {
+
+      resultsDiv.innerHTML =
+        buildHotelCards(
+          properties
+        );
+
+    } else {
+
+      searchHotels();
+
+    }
+
+
+  } catch(e) {
+
+    console.log(
+      "Featured error:",
+      e
+    );
+
+    searchHotels();
+
+  }
+
+}
+
+
+// ============================================================
+// SEARCH HOTELS
+// ============================================================
+
+async function searchHotels() {
+
+  const city =
+    document.getElementById(
+      "cityInput"
+    ).value.trim();
+
+
+  const checkin =
+    document.getElementById(
+      "checkinInput"
+    ).value;
+
+
+  const checkout =
+    document.getElementById(
+      "checkoutInput"
+    ).value;
+
+
+  const adults =
+    document.getElementById(
+      "adultsInput"
+    ).value;
+
+
+  const rooms =
+    document.getElementById(
+      "roomsInput"
+    ).value;
+
+
+  const resultsDiv =
+    document.getElementById(
+      "results"
+    );
+
+
+  const listTitle =
+    document.getElementById(
+      "listTitle"
+    );
+
+
+  if (!city) {
+
+    alert(
+      "City Name Enter Karein!"
+    );
+
+    return;
+
+  }
+
+
+  listTitle.innerText =
+    "Available Hotels in " +
+    city;
+
+
+  resultsDiv.innerHTML = `
+
+    <p
+      style="
+        text-align:center;
+        color:#94a3b8;
+      "
+    >
+      Searching live hotels and rates...
+    </p>
+
+  `;
+
+
+  try {
+
+    const url =
+      "/api/hotels" +
+      "?city=" +
+      encodeURIComponent(city) +
+      "&checkin=" +
+      encodeURIComponent(checkin) +
+      "&checkout=" +
+      encodeURIComponent(checkout) +
+      "&adults=" +
+      encodeURIComponent(adults) +
+      "&rooms=" +
+      encodeURIComponent(rooms);
+
+
+    const res =
+      await fetch(url);
+
+
+    const data =
+      await res.json();
+
+
+    if (!res.ok || data.error) {
+
+      resultsDiv.innerHTML = `
+
+        <p
+          style="
+            color:#f43f5e;
+            text-align:center;
+          "
+        >
+          ${escapeHtml(
+            data.error ||
+            "Hotel search failed"
+          )}
+
+        </p>
+
+      `;
+
+      return;
+
+    }
+
+
+    const properties =
+
+      data?.searchResults?.results ||
+
+      data?.data?.searchResults?.results ||
+
+      data?.properties ||
+
+      data?.data?.propertySearch?.properties ||
+
+      data?.data?.properties ||
+
+      data?.data?.results ||
+
+      [];
+
+
+    if (
+      !properties ||
+      properties.length === 0
+    ) {
+
+      resultsDiv.innerHTML = `
+
+        <p
+          style="
+            text-align:center;
+            color:#94a3b8;
+          "
+        >
+          No hotels found in
+          ${escapeHtml(city)}.
+          Try another location.
+        </p>
+
+      `;
+
+      return;
+
+    }
+
+
+    resultsDiv.innerHTML =
+      buildHotelCards(
+        properties.slice(0, 20),
+        city
+      );
+
+
+  } catch(err) {
+
+    console.log(
+      "Search frontend error:",
+      err
+    );
+
+
+    resultsDiv.innerHTML = `
+
+      <p
+        style="
+          color:#f43f5e;
+          text-align:center;
+        "
+      >
+        Search Request Failed.
+        Please try again.
+      </p>
+
+    `;
+
+  }
+
+}
+
+
+// ============================================================
+// START
+// ============================================================
+
+window.onload =
+  loadFeaturedHotels;
+
 </script>
+
+
 </body>
+
 </html>
+
   `);
+
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
-});
+
+// ============================================================
+// SERVER
+// ============================================================
+
+app.listen(
+  PORT,
+  () => {
+
+    console.log(
+      `Server running on port ${PORT}`
+    );
+
+    console.log(
+      `RapidAPI Host: ${RAPIDAPI_HOST}`
+    );
+
+  }
+);

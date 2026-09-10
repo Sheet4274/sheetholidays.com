@@ -1,8 +1,6 @@
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
-const path = require('path');
-const fs = require('fs');
 
 const app = express();
 app.use(cors());
@@ -10,59 +8,142 @@ app.use(cors());
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
 const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || "hotels-com-provider.p.rapidapi.com";
 
-// Serve static from both public and root
-app.use(express.static(path.join(__dirname, 'public')));
-app.use(express.static(__dirname));
-
-// API Endpoint
+// 1. Hotel Search API Endpoint
 app.get('/api/hotels', async (req, res) => {
   try {
     const { city, checkin, checkout } = req.query;
-    if (!city) return res.status(400).json({ error: "City is required" });
+    if (!city) return res.status(400).json({ error: "City name is required" });
 
+    const defaultCheckin = checkin || "2026-10-01";
+    const defaultCheckout = checkout || "2026-10-05";
+
+    // Step A: Fetch Region ID
     const regionRes = await axios.get(`https://${RAPIDAPI_HOST}/v2/regions`, {
       params: { query: city, locale: 'en_IN', domain: 'IN' },
-      headers: { 'x-rapidapi-key': RAPIDAPI_KEY, 'x-rapidapi-host': RAPIDAPI_HOST }
+      headers: {
+        'x-rapidapi-key': RAPIDAPI_KEY,
+        'x-rapidapi-host': RAPIDAPI_HOST
+      }
     });
 
     const regions = regionRes.data?.data || [];
     const cityRegion = regions.find(r => r.type === 'CITY' || r.type === 'NEIGHBORHOOD') || regions[0];
 
-    if (!cityRegion?.gaiaId) return res.status(404).json({ error: "City not found" });
+    if (!cityRegion?.gaiaId) {
+      return res.status(404).json({ error: "City region not found" });
+    }
 
+    // Step B: Search Hotels
     const hotelRes = await axios.get(`https://${RAPIDAPI_HOST}/v2/hotels/search`, {
       params: {
         region_id: cityRegion.gaiaId,
         locale: 'en_IN',
         domain: 'IN',
-        checkin_date: checkin || '2026-10-01',
-        checkout_date: checkout || '2026-10-05',
+        checkin_date: defaultCheckin,
+        checkout_date: defaultCheckout,
         sort_order: 'RECOMMENDED',
         adults_number: '2',
         currency: 'INR',
         page_number: '1'
       },
-      headers: { 'x-rapidapi-key': RAPIDAPI_KEY, 'x-rapidapi-host': RAPIDAPI_HOST }
+      headers: {
+        'x-rapidapi-key': RAPIDAPI_KEY,
+        'x-rapidapi-host': RAPIDAPI_HOST
+      }
     });
 
     res.json(hotelRes.data);
+
   } catch (err) {
-    res.status(500).json({ error: "API Failed", details: err.message });
+    console.error("API Error:", err.message);
+    res.status(500).json({ error: "API Request Failed", details: err.message });
   }
 });
 
-// Fail-safe HTML Sender (Checks root AND public)
+// 2. Direct Inline HTML UI Rendering (No external index.html required)
 app.get('*', (req, res) => {
-  const publicPath = path.join(__dirname, 'public', 'index.html');
-  const rootPath = path.join(__dirname, 'index.html');
+  res.send(`
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>Sheet Holidays Search Engine</title>
+      <style>
+        body { font-family: Arial, sans-serif; background: #f4f6f9; margin: 0; padding: 20px; text-align: center; }
+        .container { max-width: 800px; margin: auto; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        input, button { padding: 12px; margin: 5px; border-radius: 5px; border: 1px solid #ccc; font-size: 16px; }
+        input { width: 60%; }
+        button { background-color: #007bff; color: white; cursor: pointer; border: none; font-weight: bold; }
+        button:hover { background-color: #0056b3; }
+        .hotel-card { border: 1px solid #ddd; border-radius: 8px; margin-top: 15px; padding: 15px; text-align: left; display: flex; gap: 15px; align-items: center; }
+        .hotel-card img { width: 120px; height: 100px; object-fit: cover; border-radius: 5px; }
+        .hotel-info { flex-grow: 1; }
+        .wa-btn { background-color: #25D366; color: white; padding: 8px 12px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block; margin-top: 5px; }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <h2>Sheet Holidays Search Engine</h2>
+        <div>
+          <input type="text" id="cityInput" placeholder="Enter City (e.g. Goa, Mumbai, Delhi)">
+          <button onclick="searchHotels()">Search Hotels</button>
+        </div>
+        <div id="results"></div>
+      </div>
 
-  if (fs.existsSync(publicPath)) {
-    res.sendFile(publicPath);
-  } else if (fs.existsSync(rootPath)) {
-    res.sendFile(rootPath);
-  } else {
-    res.status(404).send("<h1 style='color:red;text-align:center;'>index.html file missing in repository!</h1>");
-  }
+      <script>
+        async function searchHotels() {
+          const city = document.getElementById('cityInput').value.trim();
+          const resultsDiv = document.getElementById('results');
+          if (!city) return alert("Please enter a city name");
+
+          resultsDiv.innerHTML = "<p>Searching best deals for " + city + "...</p>";
+
+          try {
+            const res = await fetch('/api/hotels?city=' + encodeURIComponent(city));
+            const data = await res.json();
+
+            if (data.error) {
+              resultsDiv.innerHTML = "<p style='color:red;'>Error: " + data.error + "</p>";
+              return;
+            }
+
+            const properties = data.properties || data.data?.properties || [];
+            if (properties.length === 0) {
+              resultsDiv.innerHTML = "<p>No hotels found for " + city + "</p>";
+              return;
+            }
+
+            let html = "";
+            properties.slice(0, 10).forEach(hotel => {
+              const name = hotel.name || "Luxury Stay";
+              const price = hotel.price?.lead?.formatted || "Check Rate";
+              const img = hotel.propertyImage?.image?.url || "https://via.placeholder.com/150";
+              const waText = encodeURIComponent("Hi Sheet Holidays, I want to book " + name + " in " + city + " for " + price);
+              const waLink = "https://wa.me/919999999999?text=" + waText;
+
+              html += \`
+                <div class="hotel-card">
+                  <img src="\${img}" alt="Hotel">
+                  <div class="hotel-info">
+                    <h3 style="margin:0 0 5px 0;">\${name}</h3>
+                    <p style="margin:0; color:#e53935; font-weight:bold;">Price: \${price}</p>
+                    <a href="\${waLink}" target="_blank" class="wa-btn">Book on WhatsApp</a>
+                  </div>
+                </div>
+              \`;
+            });
+
+            resultsDiv.innerHTML = html;
+          } catch (err) {
+            resultsDiv.innerHTML = "<p style='color:red;'>Failed to fetch search results.</p>";
+          }
+        }
+      </script>
+    </body>
+    </html>
+  `);
 });
 
 const PORT = process.env.PORT || 3000;

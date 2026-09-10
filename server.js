@@ -20,7 +20,7 @@ function getDefaultDates() {
   };
 }
 
-// Targeting Budget, Normal & 3-Star Hotels across assorted locations
+// Strictly filtering out 5-star hotels and pulling only 3-star, normal & budget stays
 app.get('/api/hotels', async (req, res) => {
   try {
     const city = req.query.city || "Mumbai";
@@ -28,11 +28,11 @@ app.get('/api/hotels', async (req, res) => {
       return res.status(500).json({ error: "GOOGLE_API_KEY missing in environment variables." });
     }
 
-    // Queries specifically fetching 3-star, budget, and normal clean stays (Avoiding 5-star luxury)
+    // Queries strictly targeting 3-star, budget, and normal clean stays (Excluding luxury/5-star)
     const queryTypes = [
       `3 star hotels in ${city}`,
       `budget family hotels in ${city}`,
-      `best affordable lodges in ${city}`
+      `affordable clean lodges in ${city}`
     ];
 
     let allResults = [];
@@ -50,11 +50,17 @@ app.get('/api/hotels', async (req, res) => {
       }
     }
 
-    // Remove duplicates based on place_id
+    // Remove duplicates and filter out luxury keywords just to be 100% sure
     const uniqueMap = new Map();
     allResults.forEach(item => {
-      if (item.place_id) uniqueMap.set(item.place_id, item);
+      const nameLower = (item.name || "").toLowerCase();
+      const isLuxury = nameLower.includes('taj') || nameLower.includes('oberoi') || nameLower.includes('marriott') || nameLower.includes('hyatt') || nameLower.includes('radisson') || nameLower.includes('luxury') || nameLower.includes('palace') || nameLower.includes('grand');
+      
+      if (item.place_id && !isLuxury) {
+        uniqueMap.set(item.place_id, item);
+      }
     });
+
     const results = Array.from(uniqueMap.values());
 
     if (results.length === 0) {
@@ -79,7 +85,6 @@ app.get('/api/hotels', async (req, res) => {
         "https://images.unsplash.com/photo-1596394516093-501ba68a0ba6?auto=format&fit=crop&w=800&q=80",
         "https://images.unsplash.com/photo-1582719478250-c89cae4dc85b?auto=format&fit=crop&w=800&q=80",
         "https://images.unsplash.com/photo-1566665797739-1674de7a421a?auto=format&fit=crop&w=800&q=80",
-        "https://images.unsplash.com/photo-1595576508898-0ad5सी2d6031?auto=format&fit=crop&w=800&q=80",
         "https://images.unsplash.com/photo-1591088398332-8a7791972843?auto=format&fit=crop&w=800&q=80",
         "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80",
         "https://images.unsplash.com/photo-1507652313519-d4e9174996dd?auto=format&fit=crop&w=800&q=80"
@@ -149,9 +154,10 @@ app.get('*', (req, res) => {
         .container { max-width: 600px; margin: 20px auto; padding: 0 12px; }
         .results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-size: 18px; font-weight: 800; color: #0f172a; }
         
-        .hotel-card { background: #ffffff; border-radius: 16px; overflow: hidden; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; }
+        /* Fixed overflow bug so dropdown menus never get cut */
+        .hotel-card { background: #ffffff; border-radius: 16px; margin-bottom: 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; position: relative; }
         
-        .slider-container { position: relative; width: 100%; height: 240px; background: #0f172a; overflow: hidden; }
+        .slider-container { position: relative; width: 100%; height: 240px; background: #0f172a; border-top-left-radius: 16px; border-top-right-radius: 16px; overflow: hidden; }
         .slider-track { display: flex; width: 100%; height: 100%; transition: transform 0.4s ease-in-out; }
         .slider-img { min-width: 100%; height: 100%; object-fit: cover; }
         
@@ -166,13 +172,12 @@ app.get('*', (req, res) => {
         .hotel-name { font-size: 18px; font-weight: 800; color: #0f172a; margin-bottom: 4px; }
         .hotel-location { font-size: 13px; color: #64748b; margin-bottom: 10px; font-weight: 500; }
         
-        /* Trust Badges */
         .badges-row { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
         .badge { background: #f0fdf4; color: #16a34a; font-size: 10px; font-weight: 800; padding: 4px 8px; border-radius: 6px; border: 1px solid #bbf7d0; }
 
-        .room-select-box { background: #f8fafc; padding: 12px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 14px; }
+        .room-select-box { background: #f8fafc; padding: 12px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 14px; position: relative; z-index: 10; }
         .room-select-box label { font-size: 11px; font-weight: 800; color: #475569; display: block; margin-bottom: 6px; text-transform: uppercase; }
-        .room-select-box select { width: 100%; padding: 10px; border-radius: 8px; border: 1.5px solid #cbd5e1; font-weight: 700; font-size: 14px; background: #fff; color: #0f172a; outline: none; }
+        .room-select-box select { width: 100%; padding: 10px; border-radius: 8px; border: 1.5px solid #cbd5e1; font-weight: 700; font-size: 14px; background: #fff; color: #0f172a; outline: none; cursor: pointer; }
 
         .wa-btn { background: #25D366; color: white; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px; border-radius: 12px; text-decoration: none; font-weight: 800; width: 100%; font-size: 15px; box-shadow: 0 4px 12px rgba(37,211,102,0.3); }
         .loader { text-align: center; padding: 40px; color: #64748b; font-weight: 600; font-size: 16px; }
@@ -283,7 +288,7 @@ app.get('*', (req, res) => {
               return;
             }
 
-            resultsHeader.innerText = \`Top Stays in \${city} (\${cachedHotels.length} Properties)\`;
+            resultsHeader.innerText = \`Top Budget Stays in \${city} (\${cachedHotels.length} Properties)\`;
             renderHotels();
 
           } catch (err) {

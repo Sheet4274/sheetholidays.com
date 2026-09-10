@@ -29,11 +29,13 @@
       border: none; border-radius: 6px; font-weight: bold; cursor: pointer; font-size: 15px; margin-top: 8px;
     }
 
+    .section-title { font-size: 18px; font-weight: bold; color: #0f172a; margin: 20px 0 10px 0; display: flex; justify-content: space-between; align-items: center; }
     .hotels-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 15px; }
     .hotel-card { background: #fff; border-radius: 10px; border: 1px solid #cbd5e1; overflow: hidden; display: flex; flex-direction: column; justify-content: space-between; }
     .hotel-img { height: 160px; width: 100%; object-fit: cover; background: #e2e8f0; }
     .card-body { padding: 12px; }
     .hotel-title { font-size: 15px; font-weight: bold; color: #0f172a; margin-bottom: 4px; }
+    .price-tag { font-size: 16px; font-weight: bold; color: #16a34a; margin: 6px 0; }
     
     .btn-wa {
       background: #25d366; color: #fff; border: none; padding: 10px; width: 100%;
@@ -56,7 +58,7 @@
       <div class="grid-form">
         <div class="field" style="grid-column: span 2;">
           <label>DESTINATION</label>
-          <input type="text" id="h_city" value="Goa">
+          <input type="text" id="h_city" value="Goa" placeholder="Enter City/Destination">
         </div>
         <div class="field">
           <label>CHECK-IN</label>
@@ -90,7 +92,15 @@
   </div>
 
   <div id="status" style="text-align:center; font-weight:bold; margin-bottom:15px; font-size:14px; color:#0f172a;"></div>
+
+  <!-- Search Results Grid -->
   <div class="hotels-grid" id="hotelsGrid"></div>
+
+  <!-- Auto Featured Popular Destinations (Jo Dikhega Woh Bikega) -->
+  <div id="featuredSection">
+    <div class="section-title">🔥 Popular Handpicked Deals</div>
+    <div class="hotels-grid" id="featuredGrid"></div>
+  </div>
 
   <script>
     window.onload = function() {
@@ -101,6 +111,9 @@
       document.getElementById("h_checkin").value = today.toISOString().split('T')[0];
       document.getElementById("h_checkout").value = tomorrow.toISOString().split('T')[0];
       document.getElementById("f_date").value = today.toISOString().split('T')[0];
+
+      // Page Load Par Automatic Featured Hotels Load Karega
+      loadFeaturedHotels();
     };
 
     function switchTab(tabId, btnId) {
@@ -108,6 +121,66 @@
       document.querySelectorAll('.tab-btn').forEach(e => e.classList.remove('active'));
       document.getElementById(tabId).classList.add('active');
       document.getElementById(btnId).classList.add('active');
+    }
+
+    // Auto-Load Featured Destinations
+    async function loadFeaturedHotels() {
+      const featuredGrid = document.getElementById("featuredGrid");
+      const destinations = ["Goa", "Srinagar", "Katra", "Delhi"];
+      const checkin = document.getElementById("h_checkin").value;
+      const checkout = document.getElementById("h_checkout").value;
+
+      featuredGrid.innerHTML = "<p style='text-align:center; width:100%; color:#64748b;'>Loading featured hot deals...</p>";
+
+      let htmlContent = "";
+
+      for (let city of destinations) {
+        try {
+          const res = await fetch(`/api/hotels?city=${encodeURIComponent(city)}&checkin=${checkin}&checkout=${checkout}`);
+          const data = await res.json();
+
+          let list = [];
+          if (data.data) list = data.data.hotels || data.data.result || data.data || [];
+          else if (data.result) list = data.result;
+
+          if (Array.isArray(list) && list.length > 0) {
+            // Har city se top 2 hotels display honge
+            list.slice(0, 2).forEach(h => {
+              const name = h.property ? h.property.name : (h.hotel_name || h.name || "Hotel");
+              let photo = "https://images.pexels.com/photos/258154/pexels-photo-258154.jpeg?auto=compress&cs=tinysrgb&w=800";
+              if (h.property && h.property.photoUrls && h.property.photoUrls.length > 0) photo = h.property.photoUrls[0];
+              else if (h.max_photo_url) photo = h.max_photo_url;
+
+              // Price extraction
+              let priceDisplay = "Rate on Enquiry";
+              if (h.property && h.property.priceBreakdown && h.property.priceBreakdown.grossPrice) {
+                const p = h.property.priceBreakdown.grossPrice;
+                priceDisplay = `₹${Math.round(p.value)} ${p.currency || 'INR'}`;
+              } else if (h.min_total_price) {
+                priceDisplay = `₹${Math.round(h.min_total_price)} INR`;
+              }
+
+              htmlContent += `
+                <div class="hotel-card">
+                  <div>
+                    <img src="${photo}" class="hotel-img" onerror="this.src='https://images.pexels.com/photos/258154/pexels-photo-258154.jpeg?auto=compress&cs=tinysrgb&w=800'">
+                    <div class="card-body">
+                      <div class="hotel-title">${name}</div>
+                      <div style="font-size:12px; color:#64748b;">📍 ${city}</div>
+                      <div class="price-tag">💰 ${priceDisplay}</div>
+                    </div>
+                  </div>
+                  <div class="card-body">
+                    <button type="button" class="btn-wa" onclick="bookHotelWA('${name.replace(/'/g, "")}', '${priceDisplay}')">BOOK VIA WHATSAPP</button>
+                  </div>
+                </div>
+              `;
+            });
+          }
+        } catch(e) { console.error(e); }
+      }
+
+      featuredGrid.innerHTML = htmlContent || "<p style='text-align:center;'>Welcome to Sheet Holidays</p>";
     }
 
     async function searchHotels() {
@@ -118,7 +191,7 @@
       const grid = document.getElementById("hotelsGrid");
 
       grid.innerHTML = "";
-      status.innerHTML = "Fetching live hotels for " + city + "...";
+      status.innerHTML = "Fetching live hotels & prices for " + city + "...";
 
       try {
         const res = await fetch(`/api/hotels?city=${encodeURIComponent(city)}&checkin=${checkin}&checkout=${checkout}`);
@@ -129,29 +202,31 @@
           return;
         }
 
-        // Multiple property pathways parsing
         let list = [];
-        if (data.data) {
-          list = data.data.hotels || data.data.result || data.data || [];
-        } else if (data.result) {
-          list = data.result;
-        }
+        if (data.data) list = data.data.hotels || data.data.result || data.data || [];
+        else if (data.result) list = data.result;
 
         if (!Array.isArray(list) || list.length === 0) {
-          status.innerHTML = "No hotels found for selected dates. Try changing destination or dates.";
+          status.innerHTML = "No hotels found for selected dates.";
           return;
         }
 
         status.innerHTML = "<span style='color:green;'>Hotels Loaded Successfully!</span>";
 
-        list.slice(0, 10).forEach(h => {
+        list.slice(0, 12).forEach(h => {
           const name = h.property ? h.property.name : (h.hotel_name || h.name || "Hotel");
           let photo = "https://images.pexels.com/photos/258154/pexels-photo-258154.jpeg?auto=compress&cs=tinysrgb&w=800";
           
-          if (h.property && h.property.photoUrls && h.property.photoUrls.length > 0) {
-            photo = h.property.photoUrls[0];
-          } else if (h.max_photo_url) {
-            photo = h.max_photo_url;
+          if (h.property && h.property.photoUrls && h.property.photoUrls.length > 0) photo = h.property.photoUrls[0];
+          else if (h.max_photo_url) photo = h.max_photo_url;
+
+          // Price extraction logic
+          let priceDisplay = "Rate on Enquiry";
+          if (h.property && h.property.priceBreakdown && h.property.priceBreakdown.grossPrice) {
+            const p = h.property.priceBreakdown.grossPrice;
+            priceDisplay = `₹${Math.round(p.value)} ${p.currency || 'INR'}`;
+          } else if (h.min_total_price) {
+            priceDisplay = `₹${Math.round(h.min_total_price)} INR`;
           }
 
           grid.innerHTML += `
@@ -161,10 +236,11 @@
                 <div class="card-body">
                   <div class="hotel-title">${name}</div>
                   <div style="font-size:12px; color:#64748b;">📍 ${city}</div>
+                  <div class="price-tag">💰 ${priceDisplay}</div>
                 </div>
               </div>
               <div class="card-body">
-                <button type="button" class="btn-wa" onclick="bookHotelWA('${name.replace(/'/g, "")}')">BOOK VIA WHATSAPP</button>
+                <button type="button" class="btn-wa" onclick="bookHotelWA('${name.replace(/'/g, "")}', '${priceDisplay}')">BOOK VIA WHATSAPP</button>
               </div>
             </div>
           `;
@@ -174,9 +250,9 @@
       }
     }
 
-    function bookHotelWA(name) {
+    function bookHotelWA(name, price) {
       const city = document.getElementById("h_city").value;
-      const msg = `Hello SheetHolidays! 👋\n\nI want to book Hotel [PROMO: SHEET2026]:\n🏨 ${name}\n📍 ${city}`;
+      const msg = `Hello SheetHolidays! 👋\n\nI want to book Hotel:\n🏨 ${name}\n📍 ${city}\n💰 Live Rate: ${price}`;
       window.open(`https://wa.me/917388442233?text=${encodeURIComponent(msg)}`, '_blank');
     }
 
@@ -184,7 +260,7 @@
       const from = document.getElementById("f_from").value;
       const to = document.getElementById("f_to").value;
       const date = document.getElementById("f_date").value;
-      const msg = `Hello SheetHolidays! 👋\n\nFlight Inquiry [PROMO: SHEET2026]:\n🛫 ${from}\n🛬 ${to}\n📅 ${date}`;
+      const msg = `Hello SheetHolidays! 👋\n\nFlight Inquiry:\n🛫 ${from}\n🛬 ${to}\n📅 ${date}`;
       window.open(`https://wa.me/917388442233?text=${encodeURIComponent(msg)}`, '_blank');
     }
   </script>

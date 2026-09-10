@@ -119,7 +119,7 @@ app.get('/api/featured-hotels', async (req, res) => {
   }
 });
 
-// 3. UI Application (Server-Side Rendered)
+// 3. UI Application
 app.get('*', (req, res) => {
   const dates = getDefaultDates();
   res.send(`
@@ -129,7 +129,6 @@ app.get('*', (req, res) => {
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
       
-      <!-- SEO Meta Tags -->
       <title>Sheet Holidays - Book Best Hotels & Resorts Online</title>
       <meta name="description" content="Book Luxury Hotels, Resorts, and Budget Stays at Best Rates with Sheet Holidays. Get instant discounts on WhatsApp booking.">
       <meta name="keywords" content="Hotels booking, Sheet Holidays, Goa Hotels, Mumbai Resorts, Holiday Packages">
@@ -140,17 +139,14 @@ app.get('*', (req, res) => {
         * { box-sizing: border-box; }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0f172a; margin: 0; padding: 0; color: #f8fafc; }
 
-        /* Header Bar */
         .navbar { background: #1e293b; padding: 15px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; }
         .logo { font-size: 20px; font-weight: 800; color: #38bdf8; text-decoration: none; }
 
         .container { max-width: 600px; margin: 15px auto; padding: 0 12px; }
 
-        /* Offer Banner */
         .promo-banner { background: linear-gradient(135deg, #f59e0b, #d97706); color: #000; padding: 12px 15px; border-radius: 12px; margin-bottom: 15px; font-weight: bold; text-align: center; font-size: 14px; }
         .promo-code { background: #000; color: #fff; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
 
-        /* Search Card Form */
         .search-card { background: #1e293b; border-radius: 16px; padding: 16px; border: 1px solid #334155; box-shadow: 0 10px 25px rgba(0,0,0,0.5); }
         .input-group { background: #0f172a; border: 1px solid #334155; border-radius: 10px; padding: 8px 12px; margin-bottom: 10px; }
         .input-group label { font-size: 10px; font-weight: 800; color: #94a3b8; display: block; text-transform: uppercase; }
@@ -162,14 +158,13 @@ app.get('*', (req, res) => {
         .search-btn { background: #2563eb; color: white; border: none; width: 100%; padding: 14px; border-radius: 25px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; }
         .search-btn:hover { background: #1d4ed8; }
 
-        /* Results & Hotels Grid */
         .section-title { font-size: 18px; font-weight: 700; margin: 25px 0 12px 0; color: #38bdf8; display: flex; align-items: center; justify-content: space-between; }
         .hotel-card { background: #1e293b; border-radius: 14px; overflow: hidden; margin-bottom: 16px; border: 1px solid #334155; }
-        .hotel-img { width: 100%; height: 190px; object-fit: cover; background: #334155; display: block; }
+        .hotel-img { width: 100%; height: 210px; object-fit: cover; background: #334155; display: block; }
         .hotel-body { padding: 14px; }
         .hotel-name { font-size: 17px; font-weight: 700; color: #ffffff; margin: 0 0 6px 0; }
         .location-badge { font-size: 12px; color: #94a3b8; margin-bottom: 8px; }
-        .hotel-price { font-size: 19px; font-weight: 800; color: #f43f5e; margin: 6px 0; }
+        .hotel-price { font-size: 20px; font-weight: 800; color: #34d399; margin: 6px 0; }
 
         .wa-btn { background: #22c55e; color: white; display: block; text-align: center; padding: 11px; border-radius: 8px; text-decoration: none; font-weight: bold; margin-top: 10px; font-size: 15px; }
       </style>
@@ -181,12 +176,10 @@ app.get('*', (req, res) => {
       </div>
 
       <div class="container">
-        <!-- Promo Banner -->
         <div class="promo-banner">
           🔥 SPECIAL OFFER: Get Flat 15% OFF! Use Code: <span class="promo-code">SHEET10</span>
         </div>
 
-        <!-- Search Form -->
         <div class="search-card">
           <div class="input-group">
             <label>Where To?</label>
@@ -227,7 +220,6 @@ app.get('*', (req, res) => {
           <button class="search-btn" onclick="searchHotels()">Search Hotels</button>
         </div>
 
-        <!-- Hotel Listing Section -->
         <div class="section-title">
           <span id="listTitle">Top Featured Stays (20 Mix Destinations)</span>
         </div>
@@ -238,29 +230,41 @@ app.get('*', (req, res) => {
       </div>
 
       <script>
-        // Extract Deep Prices across all RapidAPI Schema variants
+        // Exact Price Parser for v3 Response Variants
         function parsePrice(hotel) {
-          if (hotel.price?.lead?.formatted) return hotel.price.lead.formatted;
-          if (hotel.price?.options?.[0]?.formattedDisplayPrice) return hotel.price.options[0].formattedDisplayPrice;
-          if (hotel.price?.options?.[0]?.strikeThrough?.formatted) return hotel.price.options[0].strikeThrough.formatted;
-          if (hotel.price?.lead?.amount) return "₹" + Math.round(hotel.price.lead.amount);
-          if (hotel.price?.raw?.value) return "₹" + Math.round(hotel.price.raw.value);
-          return "₹" + (Math.floor(Math.random() * 3000) + 2500) + " / night";
+          try {
+            if (hotel.price?.lead?.formatted) return hotel.price.lead.formatted;
+            if (hotel.price?.options?.[0]?.formattedDisplayPrice) return hotel.price.options[0].formattedDisplayPrice;
+            if (hotel.price?.options?.[0]?.strikeThrough?.formatted) return hotel.price.options[0].strikeThrough.formatted;
+            if (hotel.price?.options?.[0]?.price?.formatted) return hotel.price.options[0].price.formatted;
+            if (hotel.price?.lead?.amount) return "₹" + Math.round(hotel.price.lead.amount).toLocaleString('en-IN');
+            if (hotel.price?.raw?.value) return "₹" + Math.round(hotel.price.raw.value).toLocaleString('en-IN');
+          } catch (e) {}
+          return "Contact for Rates";
         }
 
-        // Extract Deep Real Image URLs
+        // Exact Real Image URL Parser
         function parseImage(hotel) {
-          if (hotel.propertyImage?.image?.url) return hotel.propertyImage.image.url;
-          if (hotel.propertyImage?.image?.fallbackUrl) return hotel.propertyImage.image.fallbackUrl;
-          if (hotel.propertyImage?.url) return hotel.propertyImage.url;
-          return "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500";
+          let url = "";
+          try {
+            url = hotel.propertyImage?.image?.url || 
+                  hotel.propertyImage?.image?.fallbackUrl || 
+                  hotel.propertyImage?.url || 
+                  hotel.mapMarker?.propertyImage?.url || "";
+                  
+            if (url) {
+              if (url.startsWith('//')) url = 'https:' + url;
+              return url;
+            }
+          } catch(e) {}
+          return "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600&auto=format&fit=crop";
         }
 
         // Render Cards HTML
         function buildHotelCards(properties, defaultCity = "") {
           let html = "";
           properties.forEach(hotel => {
-            const name = hotel.name || "Luxury Stay";
+            const name = hotel.name || "Luxury Hotel & Resort";
             const price = parsePrice(hotel);
             const img = parseImage(hotel);
             const city = hotel.cityName || defaultCity || "India";
@@ -275,10 +279,10 @@ app.get('*', (req, res) => {
 
             html += \`
               <div class="hotel-card">
-                <img src="\${img}" class="hotel-img" alt="\${name}" onerror="this.src='https://images.unsplash.com/photo-1566073771259-6a8506099945?w=500'">
+                <img src="\${img}" class="hotel-img" alt="\${name}" loading="lazy" onerror="this.onerror=null;this.src='https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600&auto=format&fit=crop';">
                 <div class="hotel-body">
                   <div class="hotel-name">\${name}</div>
-                  <div class="location-badge">📍 Location: \${city}</div>
+                  <div class="location-badge">📍 \${city}</div>
                   <div class="hotel-price">\${price}</div>
                   <a href="\${waLink}" target="_blank" class="wa-btn">Book on WhatsApp</a>
                 </div>
@@ -288,7 +292,6 @@ app.get('*', (req, res) => {
           return html;
         }
 
-        // Auto-Load 20 Mix Hotels on Page Open
         async function loadFeaturedHotels() {
           const resultsDiv = document.getElementById('results');
           try {
@@ -299,14 +302,13 @@ app.get('*', (req, res) => {
             if (properties.length > 0) {
               resultsDiv.innerHTML = buildHotelCards(properties);
             } else {
-              searchHotels(); // Fallback to single city search
+              searchHotels();
             }
           } catch(e) {
             searchHotels();
           }
         }
 
-        // City Search Function
         async function searchHotels() {
           const city = document.getElementById('cityInput').value.trim();
           const checkin = document.getElementById('checkinInput').value;
@@ -346,7 +348,6 @@ app.get('*', (req, res) => {
           }
         }
 
-        // Trigger Auto Load
         window.onload = loadFeaturedHotels;
       </script>
     </body>

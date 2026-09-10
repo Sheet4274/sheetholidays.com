@@ -20,6 +20,7 @@ function getDefaultDates() {
   };
 }
 
+// Multi-location fetch to get 20-30 assorted hotels across popular areas
 app.get('/api/hotels', async (req, res) => {
   try {
     const city = req.query.city || "Mumbai";
@@ -27,43 +28,79 @@ app.get('/api/hotels', async (req, res) => {
       return res.status(500).json({ error: "GOOGLE_API_KEY missing in environment variables." });
     }
 
-    const searchQuery = `luxury hotels resorts in ${city}`;
-    const googleUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json`;
-    
-    const response = await axios.get(googleUrl, {
-      params: { query: searchQuery, type: 'lodging', key: GOOGLE_API_KEY }
+    // Search queries targeting diverse areas to get a rich assorted list of 20-30 hotels
+    const queryTypes = [
+      `luxury hotels in ${city}`,
+      `resorts and villas in ${city}`,
+      `boutique hotels in ${city}`
+    ];
+
+    let allResults = [];
+    for (let q of queryTypes) {
+      try {
+        const googleUrl = `https://maps.googleapis.com/maps/api/place/textsearch/json`;
+        const response = await axios.get(googleUrl, {
+          params: { query: q, type: 'lodging', key: GOOGLE_API_KEY }
+        });
+        if (response.data?.results) {
+          allResults = allResults.concat(response.data.results);
+        }
+      } catch (e) {
+        console.error("Sub-query failed:", e.message);
+      }
+    }
+
+    // Remove duplicates based on place_id
+    const uniqueMap = new Map();
+    allResults.forEach(item => {
+      if (item.place_id) uniqueMap.set(item.place_id, item);
     });
+    const results = Array.from(uniqueMap.values());
 
-    const results = response.data?.results || [];
-    if (results.length === 0) return res.json({ hotels: [], city });
+    if (results.length === 0) {
+      return res.json({ hotels: [], city });
+    }
 
-    const hotels = results.slice(0, 20).map((place, index) => {
+    // Format up to 30 hotels with multiple photos (up to 8-10 references)
+    const hotels = results.slice(0, 30).map((place, index) => {
       const name = place.name;
       const location = place.formatted_address || place.vicinity || city;
       const rating = place.rating ? `⭐ ${place.rating} (${place.user_ratings_total || 0} reviews)` : "⭐ Verified Property";
       
-      let img = "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80";
+      // Extract up to 8-10 photos from Google Place API
+      let photos = [];
       if (place.photos && place.photos.length > 0) {
-        const photoRef = place.photos[0].photo_reference;
-        img = `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${photoRef}&key=${GOOGLE_API_KEY}`;
+        photos = place.photos.slice(0, 10).map(p => 
+          `https://maps.googleapis.com/maps/api/place/photo?maxwidth=800&photoreference=${p.photo_reference}&key=${GOOGLE_API_KEY}`
+        );
       }
 
-      // Generate realistic dynamic base rates per night based on index/name tier
-      const baseMultiplier = (index % 3 === 0) ? 6500 : (index % 2 === 0 ? 4500 : 3500);
-      const deluxePrice = baseMultiplier;
-      const superDeluxePrice = Math.round(baseMultiplier * 1.35);
-      const suitePrice = Math.round(baseMultiplier * 1.9);
+      // Fallback images if Google photos are fewer
+      const fallbackImages = [
+        "https://images.unsplash.com/photo-1566073771259-6a8506099945?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1582719508461-905c673771fd?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1571896349842-33c89424de2d?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1561501900-3701fa6a0864?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1540555700478-4be289fbecef?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1512917774080-9991f1c4c750?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1591088398332-8a7791972843?auto=format&fit=crop&w=800&q=80",
+        "https://images.unsplash.com/photo-1507652313519-d4e9174996dd?auto=format&fit=crop&w=800&q=80"
+      ];
+
+      while (photos.length < 8) {
+        photos.push(fallbackImages[photos.length % fallbackImages.length]);
+      }
 
       return {
         id: index,
         name,
         location,
         rating,
-        img,
+        photos,
         roomsData: [
-          { type: "Deluxe Room (1 King Bed)", price: deluxePrice },
-          { type: "Super Deluxe (City View + Breakfast)", price: superDeluxePrice },
-          { type: "Luxury Suite (Balcony + All Meals)", price: suitePrice }
+          { type: "Deluxe King Room (City View)" },
+          { type: "Executive Suite (Breakfast Included)" },
+          { type: "Luxury Presidential Villa (All Meals)" }
         ]
       };
     });
@@ -85,60 +122,92 @@ app.get('*', (req, res) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      <title>Sheet Holidays | Direct Booking Portal</title>
+      <title>Sheet Hotels | Luxury Stays & Resorts</title>
       <style>
         * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
-        body { background: #0a192f; margin: 0; padding: 0; color: #f8fafc; }
-        .promo-banner { background: #dc2626; color: #fff; text-align: center; padding: 8px; font-size: 13px; font-weight: bold; }
-        .header { background: #0b1e38; padding: 16px; text-align: center; border-bottom: 1px solid #1e293b; }
-        .header h1 { color: #ffffff; margin: 0; font-size: 24px; font-weight: 800; }
-        .container { max-width: 550px; margin: 15px auto; padding: 0 12px; }
-        .search-card { background: #ffffff; border-radius: 16px; padding: 18px; color: #333; box-shadow: 0 10px 25px rgba(0,0,0,0.3); }
-        .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        body { background: #f8fafc; margin: 0; padding: 0; color: #1e293b; }
+        
+        /* Agoda Style Header */
+        .header { background: #0f172a; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; color: #fff; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        .logo { font-size: 20px; font-weight: 900; color: #38bdf8; letter-spacing: 0.5px; }
+        .tagline { font-size: 11px; color: #94a3b8; }
+
+        /* Search Hero Section */
+        .hero-banner { background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); padding: 25px 15px; color: #fff; }
+        .search-container { max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 16px; padding: 20px; box-shadow: 0 15px 30px rgba(0,0,0,0.2); color: #333; }
+        
+        .search-title { font-size: 16px; font-weight: 800; color: #0f172a; margin-bottom: 14px; display: flex; align-items: center; gap: 6px; }
+        .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; position: relative; }
         .full-width { grid-column: span 2; }
-        .input-box { border: 1px solid #cbd5e1; border-radius: 10px; padding: 8px 12px; background: #f8fafc; }
-        .input-box label { font-size: 10px; font-weight: bold; color: #64748b; display: block; text-transform: uppercase; }
-        .input-box input, .input-box select { border: none; background: transparent; font-size: 14px; width: 100%; outline: none; font-weight: 600; color: #0f172a; }
-        .search-btn { background: #1d4ed8; color: white; border: none; width: 100%; padding: 14px; border-radius: 12px; font-size: 16px; font-weight: bold; cursor: pointer; margin-top: 12px; }
-        .results-header { margin: 20px 0 10px; font-size: 18px; font-weight: bold; color: #38bdf8; }
-        .hotel-card { background: #ffffff; border-radius: 14px; overflow: hidden; margin-bottom: 18px; color: #0f172a; box-shadow: 0 4px 12px rgba(0,0,0,0.3); }
-        .hotel-img-container { position: relative; width: 100%; height: 220px; background: #1e293b; }
-        .hotel-img { width: 100%; height: 100%; object-fit: cover; display: block; }
-        .location-badge { position: absolute; top: 12px; left: 12px; background: rgba(15, 23, 42, 0.9); color: #fff; padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 600; }
-        .rating-badge { position: absolute; top: 12px; right: 12px; background: #fbbf24; color: #000; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
-        .hotel-info { padding: 16px; }
-        .hotel-name { font-size: 18px; font-weight: bold; margin: 0 0 10px 0; }
         
-        .room-select-box { background: #f1f5f9; padding: 10px; border-radius: 8px; margin-bottom: 10px; }
-        .room-select-box label { font-size: 11px; font-weight: bold; color: #475569; display: block; margin-bottom: 4px; }
-        .room-select-box select { width: 100%; padding: 8px; border-radius: 6px; border: 1px solid #cbd5e1; font-weight: 600; font-size: 13px; background: #fff; }
+        .input-box { border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 10px 14px; background: #f8fafc; transition: all 0.3s; }
+        .input-box:focus-within { border-color: #3b82f6; background: #fff; box-shadow: 0 0 0 3px rgba(59,130,246,0.15); }
+        .input-box label { font-size: 10px; font-weight: 800; color: #64748b; display: block; text-transform: uppercase; margin-bottom: 2px; }
+        .input-box input, .input-box select { border: none; background: transparent; font-size: 15px; width: 100%; outline: none; font-weight: 700; color: #0f172a; }
+
+        /* Autocomplete Suggestions Dropdown */
+        .suggestions-box { position: absolute; top: 75px; left: 0; right: 0; background: #fff; border: 1px solid #cbd5e1; border-radius: 10px; z-index: 100; max-height: 180px; overflow-y: auto; display: none; box-shadow: 0 10px 20px rgba(0,0,0,0.1); }
+        .suggestion-item { padding: 10px 14px; font-size: 14px; font-weight: 600; color: #334155; cursor: pointer; border-bottom: 1px solid #f1f5f9; }
+        .suggestion-item:hover { background: #eff6ff; color: #2563eb; }
+
+        .search-btn { background: #2563eb; color: white; border: none; width: 100%; padding: 15px; border-radius: 12px; font-size: 16px; font-weight: 800; cursor: pointer; margin-top: 14px; transition: background 0.2s; box-shadow: 0 4px 12px rgba(37,99,235,0.3); }
+        .search-btn:hover { background: #1d4ed8; }
+
+        /* Main Content Grid */
+        .container { max-width: 600px; margin: 20px auto; padding: 0 12px; }
+        .results-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; font-size: 18px; font-weight: 800; color: #0f172a; }
         
-        .price-display { font-size: 20px; font-weight: 800; color: #dc2626; margin: 8px 0; }
-        .wa-btn { background: #25D366; color: white; display: flex; align-items: center; justify-content: center; padding: 12px; border-radius: 8px; text-decoration: none; font-weight: bold; width: 100%; font-size: 15px; }
-        .loader { text-align: center; padding: 30px; color: #94a3b8; }
+        /* Hotel Card Agoda Style */
+        .hotel-card { background: #ffffff; border-radius: 16px; overflow: hidden; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; }
+        
+        /* Image Slider Carousel */
+        .slider-container { position: relative; width: 100%; height: 240px; background: #0f172a; overflow: hidden; }
+        .slider-track { display: flex; width: 100%; height: 100%; transition: transform 0.4s ease-in-out; }
+        .slider-img { min-width: 100%; height: 100%; object-fit: cover; }
+        
+        .slider-btn { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.5); color: white; border: none; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; font-weight: bold; z-index: 10; }
+        .prev-btn { left: 10px; }
+        .next-btn { right: 10px; }
+        
+        .rating-badge { position: absolute; top: 12px; right: 12px; background: #10b981; color: #fff; padding: 5px 10px; border-radius: 8px; font-size: 12px; font-weight: 800; box-shadow: 0 2px 6px rgba(0,0,0,0.2); z-index: 5; }
+        .image-counter { position: absolute; bottom: 12px; right: 12px; background: rgba(0,0,0,0.7); color: #fff; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; z-index: 5; }
+
+        .hotel-info { padding: 18px; }
+        .hotel-name { font-size: 18px; font-weight: 800; color: #0f172a; margin-bottom: 4px; }
+        .hotel-location { font-size: 13px; color: #64748b; margin-bottom: 14px; font-weight: 500; }
+        
+        .room-select-box { background: #f8fafc; padding: 12px; border-radius: 12px; border: 1px solid #e2e8f0; margin-bottom: 14px; }
+        .room-select-box label { font-size: 11px; font-weight: 800; color: #475569; display: block; margin-bottom: 6px; text-transform: uppercase; }
+        .room-select-box select { width: 100%; padding: 10px; border-radius: 8px; border: 1.5px solid #cbd5e1; font-weight: 700; font-size: 14px; background: #fff; color: #0f172a; outline: none; }
+
+        .wa-btn { background: #25D366; color: white; display: flex; align-items: center; justify-content: center; gap: 8px; padding: 14px; border-radius: 12px; text-decoration: none; font-weight: 800; width: 100%; font-size: 15px; box-shadow: 0 4px 12px rgba(37,211,102,0.3); transition: transform 0.1s; }
+        .wa-btn:active { transform: scale(0.98); }
+
+        .loader { text-align: center; padding: 40px; color: #64748b; font-weight: 600; font-size: 16px; }
       </style>
     </head>
     <body>
 
-      <div class="promo-banner">🔥 Special Discount: Save up to 20% by booking directly with Sheet Holidays!</div>
-
       <div class="header">
-        <h1>Sheet Holidays</h1>
+        <div class="logo">Sheet Hotels</div>
+        <div class="tagline">✨ Verified Luxury Stays</div>
       </div>
 
-      <div class="container">
-        <div class="search-card">
+      <div class="hero-banner">
+        <div class="search-container">
+          <div class="search-title">🔍 Find Your Perfect Stay</div>
           <div class="input-grid">
-            <div class="input-box full-width">
-              <label>City Name</label>
-              <input type="text" id="cityInput" value="Mumbai" placeholder="Enter City">
+            <div class="input-box full-width" style="position: relative;">
+              <label>Destination City / Area</label>
+              <input type="text" id="cityInput" value="Mumbai" placeholder="Enter city (e.g. Mumbai, Goa, Delhi)" autocomplete="off" onkeyup="showSuggestions(this.value)">
+              <div id="suggestionsBox" class="suggestions-box"></div>
             </div>
             <div class="input-box">
-              <label>Check-In Date</label>
+              <label>Check-In</label>
               <input type="date" id="checkinInput" value="${defaultDates.checkin}">
             </div>
             <div class="input-box">
-              <label>Check-Out Date</label>
+              <label>Check-Out</label>
               <input type="date" id="checkoutInput" value="${defaultDates.checkout}">
             </div>
             <div class="input-box">
@@ -159,29 +228,52 @@ app.get('*', (req, res) => {
               </select>
             </div>
           </div>
-          <button class="search-btn" onclick="searchHotels()">Search Available Hotels</button>
+          <button class="search-btn" onclick="searchHotels()">Search Hotels</button>
         </div>
+      </div>
 
-        <div class="results-header" id="resultsHeader">Hotels List</div>
+      <div class="container">
+        <div class="results-header" id="resultsHeader">Assorted Hotels</div>
         <div id="results">
-          <div class="loader">Loading verified properties...</div>
+          <div class="loader">Loading 20+ verified properties across locations...</div>
         </div>
       </div>
 
       <script>
         let cachedHotels = [];
+        const popularCities = ["Mumbai", "Goa", "Delhi", "Bangalore", "Jaipur", "Udaipur", "Dubai", "Manali", "Shimla", "Kolkata"];
 
         window.onload = function() { searchHotels(); };
 
+        function showSuggestions(val) {
+          const box = document.getElementById('suggestionsBox');
+          if (!val) { box.style.display = 'none'; return; }
+          
+          const filtered = popularCities.filter(c => c.toLowerCase().includes(val.toLowerCase()));
+          if (filtered.length === 0) { box.style.display = 'none'; return; }
+
+          let html = "";
+          filtered.forEach(city => {
+            html += \`<div class="suggestion-item" onclick="selectCity('\${city}')">📍 Sheet Hotels - \${city}</div>\`;
+          });
+          box.innerHTML = html;
+          box.style.display = 'block';
+        }
+
+        function selectCity(city) {
+          document.getElementById('cityInput').value = city;
+          document.getElementById('suggestionsBox').style.display = 'none';
+          searchHotels();
+        }
+
         async function searchHotels() {
-          const city = document.getElementById('cityInput').value.trim();
+          document.getElementById('suggestionsBox').style.display = 'none';
+          const city = document.getElementById('cityInput').value.trim() || "Mumbai";
           const resultsDiv = document.getElementById('results');
           const resultsHeader = document.getElementById('resultsHeader');
 
-          if (!city) return alert("कृपया शहर का नाम दर्ज करें!");
-
           resultsHeader.innerText = "Hotels in " + city;
-          resultsDiv.innerHTML = "<div class='loader'>होटल और रूम विकल्प लोड हो रहे हैं...</div>";
+          resultsDiv.innerHTML = "<div class='loader'>Fetching 20-30 assorted hotels & photo galleries...</div>";
 
           try {
             const queryUrl = \`/api/hotels?city=\${encodeURIComponent(city)}\`;
@@ -189,61 +281,69 @@ app.get('*', (req, res) => {
             const data = await res.json();
 
             if (data.error) {
-              resultsDiv.innerHTML = "<p style='color:#f87171; text-align:center;'>Error: " + data.error + "</p>";
+              resultsDiv.innerHTML = "<p style='color:#ef4444; text-align:center;'>Error: " + data.error + "</p>";
               return;
             }
 
             cachedHotels = data.hotels || [];
             if (cachedHotels.length === 0) {
-              resultsDiv.innerHTML = "<p style='color:white; text-align:center;'>कोई होटल नहीं मिला।</p>";
+              resultsDiv.innerHTML = "<p style='color:#64748b; text-align:center;'>No hotels found.</p>";
               return;
             }
 
-            resultsHeader.innerText = "Top " + cachedHotels.length + " Hotels in " + city;
+            resultsHeader.innerText = \`Top Stays in \${city} (\${cachedHotels.length} Properties)\`;
             renderHotels();
 
           } catch (err) {
-            resultsDiv.innerHTML = "<p style='color:#f87171; text-align:center;'>Search Error. Backend logs check karein.</p>";
+            resultsDiv.innerHTML = "<p style='color:#ef4444; text-align:center;'>Search Error occurred.</p>";
           }
         }
 
+        let currentIndices = {};
+
         function renderHotels() {
           const resultsDiv = document.getElementById('results');
-          const checkin = document.getElementById('checkinInput').value;
-          const checkout = document.getElementById('checkoutInput').value;
-          const adults = document.getElementById('adultsInput').value;
-          const roomsCount = document.getElementById('roomsInput').value;
-          
           let html = "";
 
           cachedHotels.forEach((hotel, idx) => {
+            if (currentIndices[idx] === undefined) currentIndices[idx] = 0;
+            
             let roomOptionsHtml = "";
-            hotel.roomsData.forEach((room, rIdx) => {
-              const selectedAttr = rIdx === 0 ? "selected" : "";
-              roomOptionsHtml += \`<option value="\${room.type}" data-price="\${room.price}">\${room.type} - ₹\${room.price.toLocaleString('en-IN')} / night</option>\`;
+            hotel.roomsData.forEach(room => {
+              roomOptionsHtml += \`<option value="\${room.type}">\${room.type}</option>\`;
+            });
+
+            let imagesHtml = "";
+            hotel.photos.forEach(photo => {
+              imagesHtml += \`<img src="\${photo}" class="slider-img" alt="\${hotel.name}" loading="lazy">\`;
             });
 
             html += \`
               <div class="hotel-card">
-                <div class="hotel-img-container">
-                  <img src="\${hotel.img}" class="hotel-img" alt="\${hotel.name}" loading="lazy">
-                  <div class="location-badge">📍 \${hotel.location.substring(0, 30)}...</div>
+                <div class="slider-container" id="slider_\${idx}">
                   <div class="rating-badge">\${hotel.rating}</div>
+                  <div class="slider-track" id="track_\${idx}" style="transform: translateX(0%);">
+                    \${imagesHtml}
+                  </div>
+                  <button class="slider-btn prev-btn" onclick="slideImage(\${idx}, -1)">❮</button>
+                  <button class="slider-btn next-btn" onclick="slideImage(\${idx}, 1)">❯</button>
+                  <div class="image-counter" id="counter_\${idx}">1 / \${hotel.photos.length}</div>
                 </div>
+                
                 <div class="hotel-info">
                   <div class="hotel-name">\${hotel.name}</div>
+                  <div class="hotel-location">📍 \${hotel.location}</div>
                   
                   <div class="room-select-box">
-                    <label>Select Room Type</label>
-                    <select id="roomSelect_\${idx}" onchange="updatePrice(\${idx})">
+                    <label>Select Room Category</label>
+                    <select id="roomSelect_\${idx}">
                       \${roomOptionsHtml}
                     </select>
                   </div>
 
-                  <div style="font-size: 11px; color: #64748b;">Estimated Best Rate (Per Night)</div>
-                  <div class="price-tag" id="priceDisplay_\${idx}">₹\${hotel.roomsData[0].price.toLocaleString('en-IN')}</div>
-                  
-                  <button class="wa-btn" onclick="bookViaWhatsApp(\${idx})">📱 Book Now via WhatsApp</button>
+                  <button class="wa-btn" onclick="bookViaWhatsApp(\${idx})">
+                    <span>📱 Book Now via WhatsApp</span>
+                  </button>
                 </div>
               </div>
             \`;
@@ -252,18 +352,27 @@ app.get('*', (req, res) => {
           resultsDiv.innerHTML = html;
         }
 
-        function updatePrice(idx) {
-          const selectElement = document.getElementById('roomSelect_' + idx);
-          const selectedOption = selectElement.options[selectElement.selectedIndex];
-          const price = selectedOption.getAttribute('data-price');
-          document.getElementById('priceDisplay_' + idx).innerText = "₹" + Number(price).toLocaleString('en-IN');
+        function slideImage(hotelIdx, direction) {
+          const hotel = cachedHotels[hotelIdx];
+          const totalPhotos = hotel.photos.length;
+          
+          currentIndices[hotelIdx] += direction;
+          if (currentIndices[hotelIdx] < 0) {
+            currentIndices[hotelIdx] = totalPhotos - 1;
+          } else if (currentIndices[hotelIdx] >= totalPhotos) {
+            currentIndices[hotelIdx] = 0;
+          }
+
+          const track = document.getElementById('track_' + hotelIdx);
+          track.style.transform = \`translateX(-\${currentIndices[hotelIdx] * 100}%)\`;
+          
+          document.getElementById('counter_' + hotelIdx).innerText = (currentIndices[hotelIdx] + 1) + " / " + totalPhotos;
         }
 
         function bookViaWhatsApp(idx) {
           const hotel = cachedHotels[idx];
           const selectElement = document.getElementById('roomSelect_' + idx);
           const selectedRoom = selectElement.value;
-          const price = selectElement.options[selectElement.selectedIndex].getAttribute('data-price');
           
           const city = document.getElementById('cityInput').value;
           const checkin = document.getElementById('checkinInput').value;
@@ -272,10 +381,9 @@ app.get('*', (req, res) => {
           const roomsCount = document.getElementById('roomsInput').value;
 
           const msg = encodeURIComponent(
-            "Hi Sheet Holidays, I want to book this hotel:\\n\\n" + 
+            "Hi Sheet Hotels, I want to book this property:\\n\\n" + 
             "🏨 Hotel: " + hotel.name + "\\n" +
             "🛏️ Room Type: " + selectedRoom + "\\n" +
-            "💰 Rate: ₹" + Number(price).toLocaleString('en-IN') + " per night\\n" +
             "📍 Location: " + hotel.location + "\\n" +
             "📅 Check-in: " + checkin + "\\n" +
             "📅 Check-out: " + checkout + "\\n" +

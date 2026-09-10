@@ -125,8 +125,6 @@ app.get('*', (req, res) => {
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
-      
-      <!-- FIX 1: Referrer policy tag added so Hotels.com CDN does not block localhost -->
       <meta name="referrer" content="no-referrer">
       
       <title>Sheet Holidays - Book Best Hotels & Resorts Online</title>
@@ -228,38 +226,53 @@ app.get('*', (req, res) => {
       </div>
 
       <script>
+        // Deep Extraction for Price across all RapidAPI Hotels.com Response Schemes
         function parsePrice(hotel) {
           try {
-            const lineItem = hotel.price?.displayMessages?.[0]?.lineItems?.[0]?.price;
-            if (lineItem?.formatted) return lineItem.formatted;
+            // Check formatted string paths
+            const p1 = hotel.price?.lead?.formatted;
+            if (p1) return p1;
 
-            if (hotel.price?.options?.[0]?.formattedDisplayPrice) {
-              return hotel.price.options[0].formattedDisplayPrice;
-            }
-            if (hotel.price?.lead?.formatted) {
-              return hotel.price.lead.formatted;
-            }
-            if (hotel.price?.options?.[0]?.strikeThrough?.formatted) {
-              return hotel.price.options[0].strikeThrough.formatted;
-            }
+            const p2 = hotel.price?.options?.[0]?.formattedDisplayPrice;
+            if (p2) return p2;
 
-            const rawVal = hotel.price?.lead?.amount || hotel.price?.raw?.value;
-            if (rawVal) return "₹" + Math.round(rawVal).toLocaleString('en-IN');
-          } catch (e) {}
+            const p3 = hotel.price?.displayMessages?.[0]?.lineItems?.[0]?.price?.formatted;
+            if (p3) return p3;
+
+            const p4 = hotel.price?.strikeThrough?.formatted;
+            if (p4) return p4;
+
+            // Check numeric amounts if formatted string is absent
+            const numVal = hotel.price?.lead?.amount || 
+                           hotel.price?.raw?.value || 
+                           hotel.price?.options?.[0]?.value || 
+                           hotel.price?.summary?.lead?.amount;
+
+            if (numVal && !isNaN(numVal)) {
+              return "₹" + Math.round(Number(numVal)).toLocaleString('en-IN');
+            }
+          } catch (e) {
+            console.error("Price Parsing Error:", e);
+          }
           return "Rates on Request";
         }
 
-        // FIX 2: Check cardPhotos and all nested RapidAPI v3 paths
+        // Deep Extraction for Images across all RapidAPI Hotels.com Response Schemes
         function parseImage(hotel) {
           try {
             let rawUrl = "";
 
-            // Check cardPhotos array
-            if (hotel.cardPhotos && hotel.cardPhotos.length > 0) {
+            // Array Path 1: cardPhotos
+            if (Array.isArray(hotel.cardPhotos) && hotel.cardPhotos.length > 0) {
               rawUrl = hotel.cardPhotos[0]?.image?.url || hotel.cardPhotos[0]?.url || "";
             }
 
-            // Check standard propertyImage paths
+            // Array Path 2: propertyImages
+            if (!rawUrl && Array.isArray(hotel.propertyImages) && hotel.propertyImages.length > 0) {
+              rawUrl = hotel.propertyImages[0]?.image?.url || hotel.propertyImages[0]?.url || "";
+            }
+
+            // Object Paths: propertyImage / mapMarker / summary
             if (!rawUrl) {
               rawUrl = hotel.propertyImage?.image?.url || 
                        hotel.propertyImage?.url || 
@@ -269,15 +282,20 @@ app.get('*', (req, res) => {
             }
 
             if (rawUrl) {
-              // Replace placeholder '{size}' with 'z' for high resolution
+              // Convert template {size} to 'z' (High-res 500x500 thumbnail)
               rawUrl = rawUrl.replace('{size}', 'z');
+
+              // Prefix protocol if relative URL
               if (rawUrl.startsWith('//')) {
                 rawUrl = 'https:' + rawUrl;
               }
               return rawUrl;
             }
-          } catch(e) {}
+          } catch(e) {
+            console.error("Image Parsing Error:", e);
+          }
 
+          // Fallback image if hotel has no image in API
           return "https://images.unsplash.com/photo-1566073771259-6a8506099945?w=600&auto=format&fit=crop";
         }
 

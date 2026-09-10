@@ -12,7 +12,7 @@ app.use(express.json());
 const PORT = process.env.PORT || 10000;
 
 const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
-const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || "booking-com15.p.rapidapi.com";
+const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST || "hotels-com-provider.p.rapidapi.com";
 
 const API_BASE = `https://${RAPIDAPI_HOST}`;
 
@@ -41,116 +41,81 @@ function defaultDates() {
 }
 
 // ----------------------------------------------------
-// DESTINATION
+// HOTELS.COM REGION / CITY SEARCH
 // ----------------------------------------------------
-async function findDestination(city) {
-  const response = await axios.get(`${API_BASE}/api/v1/hotels/searchDestination`, {
-    params: { query: city },
+async function findRegion(city) {
+  const response = await axios.get(`${API_BASE}/v2/regions`, {
+    params: { query: city, locale: "en_IN", domain: "IN" },
     headers: {
-      "X-RapidAPI-Key": RAPIDAPI_KEY,
-      "X-RapidAPI-Host": RAPIDAPI_HOST
+      "x-rapidapi-key": RAPIDAPI_KEY,
+      "x-rapidapi-host": RAPIDAPI_HOST
     },
     timeout: 20000
   });
 
-  const list = response.data?.data || [];
-  if (!list.length) {
-    throw new Error(`Destination not found: ${city}`);
+  const regions = response.data?.data || [];
+  if (!regions.length) {
+    throw new Error(`City '${city}' not found.`);
   }
 
-  return list.find(x => String(x.search_type || "").toLowerCase() === "city") || list[0];
+  const cityRegion = regions.find(r => r.type === "CITY" || r.type === "NEIGHBORHOOD") || regions[0];
+  return cityRegion.gaiaId || cityRegion.id;
 }
 
 // ----------------------------------------------------
-// PHOTO FINDER
+// PARSERS FOR HOTELS.COM
 // ----------------------------------------------------
-function findImage(obj) {
-  if (!obj || typeof obj !== "object") return null;
+function parsePrice(hotel) {
+  try {
+    const p1 = hotel.price?.lead?.formatted;
+    if (p1) return { amount: p1 };
 
-  const possibleKeys = [
-    "url", "image_url", "imageUrl", "photo_url", "photoUrl",
-    "thumbnail", "thumbnail_url", "thumbnailUrl", "full_url", "fullUrl", "src"
-  ];
+    const p2 = hotel.price?.options?.[0]?.formattedDisplayPrice;
+    if (p2) return { amount: p2 };
 
-  for (const key of possibleKeys) {
-    if (typeof obj[key] === "string") {
-      const value = obj[key];
-      if (value.startsWith("http://") || value.startsWith("https://") || value.startsWith("//")) {
-        return value.startsWith("//") ? "https:" + value : value;
-      }
+    const numVal = hotel.price?.lead?.amount || hotel.price?.raw?.value;
+    if (numVal && !isNaN(numVal)) {
+      return { amount: "₹" + Math.round(Number(numVal)).toLocaleString("en-IN") };
     }
-  }
+  } catch (e) {}
+  return { amount: "Price on Request" };
+}
 
-  for (const key of Object.keys(obj)) {
-    const value = obj[key];
-    if (Array.isArray(value)) {
-      for (const item of value) {
-        const found = findImage(item);
-        if (found) return found;
-      }
-    } else if (value && typeof value === "object") {
-      const found = findImage(value);
-      if (found) return found;
+function parseImage(hotel) {
+  try {
+    let rawUrl = "";
+
+    if (Array.isArray(hotel.cardPhotos) && hotel.cardPhotos.length > 0) {
+      rawUrl = hotel.cardPhotos[0]?.image?.url || hotel.cardPhotos[0]?.url || "";
     }
-  }
 
+    if (!rawUrl && Array.isArray(hotel.propertyImages) && hotel.propertyImages.length > 0) {
+      rawUrl = hotel.propertyImages[0]?.image?.url || hotel.propertyImages[0]?.url || "";
+    }
+
+    if (!rawUrl) {
+      rawUrl = hotel.propertyImage?.image?.url || hotel.propertyImage?.url || "";
+    }
+
+    if (rawUrl) {
+      rawUrl = rawUrl.replace("{size}", "z");
+      if (rawUrl.startsWith("//")) rawUrl = "https:" + rawUrl;
+      return rawUrl;
+    }
+  } catch (e) {}
   return null;
 }
 
-async function getHotelPhoto(hotelId) {
-  try {
-    const response = await axios.get(`${API_BASE}/api/v1/hotels/getHotelPhotos`, {
-      params: { hotel_id: hotelId },
-      headers: {
-        "X-RapidAPI-Key": RAPIDAPI_KEY,
-        "X-RapidAPI-Host": RAPIDAPI_HOST
-      },
-      timeout: 15000
-    });
-
-    const data = response.data?.data || response.data;
-    return findImage(data);
-  } catch (error) {
-    return null;
-  }
-}
-
 // ----------------------------------------------------
-// HELPER PARSERS
-// ----------------------------------------------------
-function getPrice(hotel) {
-  const price =
-    hotel?.priceBreakdown?.grossPrice?.value ??
-    hotel?.priceBreakdown?.grossPrice?.amount ??
-    hotel?.compositePriceBreakdown?.grossAmount?.value ??
-    hotel?.price?.value ?? null;
-
-  if (price === null || price === undefined) return null;
-
-  const currency = hotel?.priceBreakdown?.grossPrice?.currency || "INR";
-  const numeric = Number(price);
-
-  return Number.isFinite(numeric) ? { amount: Math.round(numeric), currency } : null;
-}
-
-function getHotelName(hotel) {
-  return hotel?.property?.name || hotel?.property?.hotel_name || hotel?.name || "Hotel Stay";
-}
-
-function getRating(hotel) {
-  return hotel?.property?.reviewScore || hotel?.property?.review_score || hotel?.reviewScore || null;
-}
-
-// ----------------------------------------------------
-// SEARCH API ENDPOINT
+// SEARCH API ENDPOINT (HOTELS.COM)
 // ----------------------------------------------------
 app.get("/api/hotels", async (req, res) => {
   try {
     if (!RAPIDAPI_KEY) {
-      return res.status(500).json({ status: false, error: "RAPIDAPI_KEY environment variable missing on Render." });
+      return res.status(500).json({ status: false, error: "RAPIDAPI_KEY missing on Render" });
     }
 
-    let { city, checkin, checkout, adults, rooms, children_age } = req.query;
+    let { city, checkin, checkout, adults, rooms } = req.query;
     city = city || "Goa";
     const dates = defaultDates();
 
@@ -159,74 +124,57 @@ app.get("/api/hotels", async (req, res) => {
     adults = adults || "2";
     rooms = rooms || "1";
 
-    const destination = await findDestination(city);
-    const destId = destination.dest_id;
-    const searchType = destination.search_type || "city";
+    const gaiaId = await findRegion(city);
 
-    const params = {
-      dest_id: destId,
-      search_type: searchType,
-      arrival_date: checkin,
-      departure_date: checkout,
-      adults: adults,
-      room_qty: rooms,
-      page_number: "1",
-      currency_code: "INR",
-      languagecode: "en-us"
-    };
-
-    if (children_age) params.children_age = children_age;
-
-    const response = await axios.get(`${API_BASE}/api/v1/hotels/searchHotels`, {
-      params,
+    const response = await axios.get(`${API_BASE}/v3/hotels/search`, {
+      params: {
+        region_id: gaiaId,
+        locale: "en_IN",
+        domain: "IN",
+        checkin_date: checkin,
+        checkout_date: checkout,
+        sort_order: "RECOMMENDED",
+        adults_number: adults,
+        rooms_number: rooms,
+        currency: "INR",
+        page_number: "1"
+      },
       headers: {
-        "X-RapidAPI-Key": RAPIDAPI_KEY,
-        "X-RapidAPI-Host": RAPIDAPI_HOST
+        "x-rapidapi-key": RAPIDAPI_KEY,
+        "x-rapidapi-host": RAPIDAPI_HOST
       },
       timeout: 30000
     });
 
-    const hotels = response.data?.data?.hotels || response.data?.data?.result || response.data?.hotels || [];
-    const selectedHotels = hotels.slice(0, 15);
+    const rawProperties = response.data?.properties || response.data?.data?.propertySearch?.properties || [];
 
-    const finalHotels = await Promise.all(
-      selectedHotels.map(async hotel => {
-        const hotelId = hotel?.hotel_id || hotel?.hotelId || hotel?.property?.id;
-        let image = null;
-
-        if (hotelId) {
-          image = await getHotelPhoto(hotelId);
-        }
-
-        return {
-          hotel_id: hotelId,
-          name: getHotelName(hotel),
-          rating: getRating(hotel),
-          image: image,
-          price: getPrice(hotel)
-        };
-      })
-    );
+    const hotels = rawProperties.slice(0, 15).map(h => ({
+      hotel_id: h.id,
+      name: h.name || "Luxury Stay",
+      rating: h.reviews?.score || h.star || null,
+      image: parseImage(h),
+      price: parsePrice(h)
+    }));
 
     res.json({
       status: true,
-      destination: { name: destination.name || city, dest_id: destId, search_type: searchType },
+      destination: { name: city, region_id: gaiaId },
       dates: { checkin, checkout },
-      guests: { adults, rooms, children_age: children_age || "" },
-      hotels: finalHotels
+      guests: { adults, rooms },
+      hotels
     });
 
   } catch (error) {
+    const errorDetails = error.response?.data || error.message;
     res.status(500).json({
       status: false,
-      error: "Hotel search failed",
-      details: error.response?.data || error.message
+      error: typeof errorDetails === "object" ? JSON.stringify(errorDetails) : errorDetails
     });
   }
 });
 
 // ----------------------------------------------------
-// FRONTEND APP
+// FRONTEND UI
 // ----------------------------------------------------
 app.get("*", (req, res) => {
   const dates = defaultDates();
@@ -302,10 +250,6 @@ input, select { width: 100%; border: 1px solid #334155; background: #07111f; col
         </select>
       </div>
     </div>
-    <div class="field">
-      <label>CHILDREN AGES</label>
-      <input id="children" placeholder="Example: 5,10 (optional)">
-    </div>
     <button class="searchBtn" onclick="searchHotels()">🔍 Search Hotels</button>
   </div>
   <div class="title" id="title">Popular Hotels</div>
@@ -317,15 +261,10 @@ function escapeHtml(text) {
   return String(text).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-function money(price) {
-  if (!price || !price.amount) return "Price unavailable";
-  return "₹" + Number(price.amount).toLocaleString("en-IN");
-}
-
 function createCard(hotel) {
   const name = escapeHtml(hotel.name || "Hotel");
   const rating = hotel.rating ? "⭐ " + hotel.rating : "";
-  const price = money(hotel.price);
+  const price = hotel.price?.amount || "Rates on Request";
   const image = hotel.image;
 
   const city = document.getElementById("city").value;
@@ -333,9 +272,8 @@ function createCard(hotel) {
   const checkout = document.getElementById("checkout").value;
   const adults = document.getElementById("adults").value;
   const rooms = document.getElementById("rooms").value;
-  const children = document.getElementById("children").value;
 
-  const message = encodeURIComponent("Hi Sheet Holidays!\\n\\nI want to book:\\n" + name + "\\n\\nDestination: " + city + "\\nCheck-in: " + checkin + "\\nCheck-out: " + checkout + "\\nAdults: " + adults + "\\nRooms: " + rooms + "\\nChildren: " + (children || "0") + "\\n\\nPrice: " + price);
+  const message = encodeURIComponent("Hi Sheet Holidays!\\n\\nI want to book:\\n" + name + "\\n\\nDestination: " + city + "\\nCheck-in: " + checkin + "\\nCheck-out: " + checkout + "\\nAdults: " + adults + "\\nRooms: " + rooms + "\\n\\nPrice: " + price);
   const whatsapp = "https://wa.me/917388442233?text=" + message;
 
   const photoHtml = image 
@@ -361,7 +299,6 @@ async function searchHotels() {
   const checkout = document.getElementById("checkout").value;
   const adults = document.getElementById("adults").value;
   const rooms = document.getElementById("rooms").value;
-  const children = document.getElementById("children").value.trim();
 
   const results = document.getElementById("results");
   const title = document.getElementById("title");
@@ -372,17 +309,15 @@ async function searchHotels() {
   }
 
   title.innerText = "Searching hotels in " + city + "...";
-  results.innerHTML = \`<div class="loading">🔄 Finding live hotels, prices & photos...</div>\`;
+  results.innerHTML = \`<div class="loading">🔄 Finding live hotels & prices...</div>\`;
 
   try {
     let url = \`/api/hotels?city=\${encodeURIComponent(city)}&checkin=\${checkin}&checkout=\${checkout}&adults=\${adults}&rooms=\${rooms}\`;
-    if (children) url += \`&children_age=\${encodeURIComponent(children)}\`;
-
     const response = await fetch(url);
     const data = await response.json();
 
     if (!response.ok || !data.status) {
-      throw new Error(data.details?.message || data.error || "Hotel API error");
+      throw new Error(data.error || "Hotels Search Error");
     }
 
     const hotels = data.hotels || [];
@@ -407,5 +342,5 @@ window.addEventListener("load", searchHotels);
 });
 
 app.listen(PORT, () => {
-  console.log(`Server listening on port ${PORT}`);
+  console.log(`Server running on port ${PORT}`);
 });

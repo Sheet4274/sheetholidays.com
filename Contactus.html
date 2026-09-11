@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sheet Holidays | Contact Us</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; font-family: 'Lato', sans-serif; margin:0; padding:0; }
+    body { background: #f1f5f9; color: #1e293b; }
+    header { background:#0f172a; padding:15px 5%; display:flex; justify-content:space-between; align-items:center; color:#fff; position:sticky; top:0; z-index:1000; box-shadow:0 2px 10px rgba(0,0,0,0.2); }
+    header a.logo { font-size:1.4rem; font-weight:900; color:#38bdf8; text-decoration:none; display:flex; align-items:center; gap:8px; }
+    nav { display:flex; gap:18px; align-items:center; flex-wrap:wrap; }
+    nav a { color:#cbd5e1; text-decoration:none; font-weight:700; font-size:0.9rem; }
+    nav a.active { color:#38bdf8; }
+    .hero { background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); padding: 35px 15px; text-align: center; color: #fff; }
+    .container { max-width: 900px; margin: 30px auto; padding: 0 15px; display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+    .card { background: #fff; border-radius: 16px; padding: 25px; border: 1.5px solid #e2e8f0; box-shadow: 0 4px 15px rgba(0,0,0,0.05); text-align: center; }
+    .card i.office-icon { font-size: 2.2rem; color: #2563eb; margin-bottom: 12px; }
+    .card h3 { font-size: 1.2rem; font-weight: 900; color: #0f172a; margin-bottom: 8px; }
+    .card p { font-size: 0.9rem; color: #64748b; margin-bottom: 15px; line-height: 1.5; }
+    .wa-btn { background: #25D366; color: white; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 10px 20px; border-radius: 10px; text-decoration: none; font-weight: 800; font-size: 0.9rem; width: 100%; }
+    .wa-btn:hover { background: #20ba5a; }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/" class="logo"><i class="fas fa-globe-asia"></i> Sheet Holidays</a>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/hotels">Hotels</a>
+      <a href="/packages">Holiday Packages</a>
+      <a href="/cabs">Taxi Services</a>
+      <a href="/contact" class="active">Contact Us</a>
+    </nav>
+  </header>
+
+  <div class="hero">
+    <h1>Get in Touch With Us</h1>
+    <p>Visit or reach out to our offices for best holiday deals</p>
+  </div>
+
+  <div class="container">
+    <!-- Lucknow Head Office -->
+    <div class="card">
+      <i class="fas fa-building office-icon"></i>
+      <h3>Lucknow Head Office</h3>
+      <p>533/79, Pratapbag, Aliganj, Lucknow, Uttar Pradesh - 226024</p>
+      <a href="https://wa.me/917388442233?text=Enquiry%20Lucknow%20Office" target="_blank" class="wa-btn">
+        <i class="fab fa-whatsapp"></i> +91 73884 42233 (Chat)
+      </a>
+    </div>
+
+    <!-- Katra Branch Office -->
+    <div class="card">
+      <i class="fas fa-store office-icon"></i>
+      <h3>Katra Branch Office</h3>
+      <p>Shop No. 206, Railway Road, Katra - 182301</p>
+      <a href="https://wa.me/918715850050?text=Enquiry%20Katra%20Office" target="_blank" class="wa-btn">
+        <i class="fab fa-whatsapp"></i> +91 87158 50050 (Chat)
+      </a>
+    </div>
+  </div>
+</body>
+</html>

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sheet Holidays | Hotels</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&display=swap" rel="stylesheet">
+  <style>
+    * { box-sizing: border-box; font-family: 'Lato', sans-serif; margin:0; padding:0; }
+    body { background: #f1f5f9; color: #1e293b; }
+    header { background:#0f172a; padding:15px 5%; display:flex; justify-content:space-between; align-items:center; color:#fff; position:sticky; top:0; z-index:1000; box-shadow:0 2px 10px rgba(0,0,0,0.2); }
+    header a.logo { font-size:1.4rem; font-weight:900; color:#38bdf8; text-decoration:none; display:flex; align-items:center; gap:8px; }
+    nav { display:flex; gap:18px; align-items:center; flex-wrap:wrap; }
+    nav a { color:#cbd5e1; text-decoration:none; font-weight:700; font-size:0.9rem; }
+    nav a.active { color:#38bdf8; }
+    .hero-banner { background: linear-gradient(135deg, #0f172a 0%, #1e3a8a 100%); padding: 30px 15px; color: #fff; }
+    .search-container { max-width: 650px; margin: 0 auto; background: #ffffff; border-radius: 16px; padding: 20px; box-shadow: 0 15px 30px rgba(0,0,0,0.2); color: #333; }
+    .input-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+    .full-width { grid-column: span 2; }
+    .input-box { border: 1.5px solid #e2e8f0; border-radius: 12px; padding: 10px 14px; background: #f8fafc; }
+    .input-box label { font-size: 10px; font-weight: 800; color: #64748b; display: block; text-transform: uppercase; margin-bottom: 2px; }
+    .input-box input { border: none; background: transparent; font-size: 15px; width: 100%; outline: none; font-weight: 700; color: #0f172a; }
+    .search-btn { background: #2563eb; color: white; border: none; width: 100%; padding: 15px; border-radius: 12px; font-size: 16px; font-weight: 800; cursor: pointer; margin-top: 14px; }
+    .container { max-width: 650px; margin: 20px auto; padding: 0 12px; }
+    .hotel-card { background: #ffffff; border-radius: 16px; margin-bottom: 25px; box-shadow: 0 4px 20px rgba(0,0,0,0.06); border: 1px solid #e2e8f0; overflow:hidden; }
+    .slider-container { position: relative; width: 100%; height: 220px; background: #0f172a; }
+    .slider-track { display: flex; width: 100%; height: 100%; transition: transform 0.4s; }
+    .slider-img { min-width: 100%; height: 100%; object-fit: cover; }
+    .slider-btn { position: absolute; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.5); color: white; border: none; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; z-index: 10; }
+    .prev-btn { left: 10px; } .next-btn { right: 10px; }
+    .hotel-info { padding: 18px; }
+    .hotel-name { font-size: 18px; font-weight: 800; color: #0f172a; margin-bottom: 4px; }
+    .hotel-location { font-size: 13px; color: #64748b; margin-bottom: 10px; }
+    .wa-btn { background: #25D366; color: white; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 12px; border-radius: 12px; text-decoration: none; font-weight: 800; width: 100%; font-size: 14px; margin-top: 10px; }
+    .loader { text-align: center; padding: 40px; color: #64748b; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/" class="logo"><i class="fas fa-globe-asia"></i> Sheet Holidays</a>
+    <nav>
+      <a href="/">Home</a>
+      <a href="/hotels" class="active">Hotels</a>
+      <a href="/packages">Holiday Packages</a>
+      <a href="/cabs">Taxi Services</a>
+      <a href="/contact">Contact Us</a>
+    </nav>
+  </header>
+  <div class="hero-banner">
+    <div class="search-container">
+      <div style="font-size:16px; font-weight:800; color:#0f172a; margin-bottom:14px;">🔍 Find 3-Star Hotels</div>
+      <div class="input-grid">
+        <div class="input-box full-width"><label>Enter City</label><input type="text" id="cityInput" value="Mumbai"></div>
+      </div>
+      <button class="search-btn" onclick="searchHotels()">Search Hotels</button>
+    </div>
+  </div>
+  <div class="container">
+    <div id="results"><div class="loader">Loading...</div></div>
+  </div>
+  <script>
+    let cachedHotels = [];
+    window.onload = function() { searchHotels(); };
+    async function searchHotels() {
+      const city = document.getElementById('cityInput').value.trim() || "Mumbai";
+      const resultsDiv = document.getElementById('results');
+      resultsDiv.innerHTML = "<div class='loader'>Fetching hotels...</div>";
+      try {
+        const res = await fetch('/api/hotels?city=' + encodeURIComponent(city));
+        const data = await res.json();
+        cachedHotels = data.hotels || [];
+        if (!cachedHotels.length) { resultsDiv.innerHTML = "<p style='text-align:center;'>No hotels found.</p>"; return; }
+        renderHotels();
+      } catch(e) { resultsDiv.innerHTML = "<p style='color:red; text-align:center;'>Error loading data.</p>"; }
+    }
+    let currentIndices = {};
+    function renderHotels() {
+      document.getElementById('results').innerHTML = cachedHotels.map((hotel, idx) => {
+        if (currentIndices[idx] === undefined) currentIndices[idx] = 0;
+        const imgs = hotel.photos.map(p => '<img src="' + p + '" class="slider-img">').join('');
+        return `
+          <div class="hotel-card">
+            <div class="slider-container">
+              <div class="slider-track" id="track_${idx}" style="transform: translateX(0%);">${imgs}</div>
+              <button class="slider-btn prev-btn" onclick="slideImage(${idx}, -1)">❮</button>
+              <button class="slider-btn next-btn" onclick="slideImage(${idx}, 1)">❯</button>
+            </div>
+            <div class="hotel-info">
+              <div class="hotel-name">${hotel.name}</div>
+              <div class="hotel-location">📍 ${hotel.location}</div>
+              <a href="https://wa.me/917388442233?text=${encodeURIComponent('Booking Enquiry for: ' + hotel.name)}" target="_blank" class="wa-btn"><i class="fab fa-whatsapp"></i> Book via WhatsApp</a>
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+    function slideImage(idx, dir) {
+      const total = cachedHotels[idx].photos.length;
+      currentIndices[idx] = (currentIndices[idx] + dir + total) % total;
+      document.getElementById('track_' + idx).style.transform = 'translateX(-' + (currentIndices[idx] * 100) + '%)';
+    }
+  </script>
+</body>
+</html>

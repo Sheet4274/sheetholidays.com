@@ -9,32 +9,27 @@ app.use(express.json());
 
 const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY;
 
-// Static folder agar kuch CSS/Images rakhni ho
 app.use(express.static(path.join(__dirname, 'public')));
 
-// 1. Home Page
+// अब यह सीधे बाहर पड़ी हुई फाइलों को उठाएगा (जो तेरे GitHub स्क्रीनशॉट में हैं)
 app.get('/', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'index.html'));
+  res.sendFile(path.join(__dirname, 'index.html'));
 });
 
-// 2. Hotels Page
 app.get('/hotels', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'hotels.html'));
+  res.sendFile(path.join(__dirname, 'hotels.html'));
 });
 
-// 3. Packages Page
 app.get('/packages', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'packages.html'));
+  res.sendFile(path.join(__dirname, 'holidaypackages.html'));
 });
 
-// 4. Cabs Page
 app.get('/cabs', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'cabs.html'));
+  res.sendFile(path.join(__dirname, 'cabs.html'));
 });
 
-// 5. Contact Page
 app.get('/contact', (req, res) => {
-  res.sendFile(path.join(__dirname, 'views', 'contact.html'));
+  res.sendFile(path.join(__dirname, 'Contactus.html'));
 });
 
 // Hotel API Route
